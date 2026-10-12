@@ -54,20 +54,29 @@ class PlayerController {
             joinBtn.disabled = true;
             joinBtn.textContent = "Joining...";
 
-            const res = await this.sync.joinPlayer(name);
-            if (!res.success) {
-                this.showError(res.error);
-                joinBtn.disabled = false;
-                joinBtn.textContent = "Enter Lobby";
-                return;
-            }
-
-            this.currentPlayer = { id: res.playerId, name: res.player.name };
             try {
-                sessionStorage.setItem(`acm_player_${this.roomId}`, JSON.stringify(this.currentPlayer));
-            } catch (e) {}
+                const res = await this.sync.joinPlayer(name);
+                if (!res.success) {
+                    this.showError(res.error || "Could not join lobby.");
+                    joinBtn.disabled = false;
+                    joinBtn.textContent = "Join Game";
+                    return;
+                }
 
-            this.showLobbyWaiting();
+                this.currentPlayer = { id: res.playerId, name: res.player.name };
+                try {
+                    sessionStorage.setItem(`acm_player_${this.roomId}`, JSON.stringify(this.currentPlayer));
+                } catch (e) {}
+
+                // Immediately transition to waiting room (Ready)
+                this.showLobbyWaiting();
+            } catch (err) {
+                console.error("Join error:", err);
+                this.showError("Network error joining lobby. Please try again.");
+            } finally {
+                joinBtn.disabled = false;
+                joinBtn.textContent = "Join Game";
+            }
         };
 
         if (joinBtn) joinBtn.addEventListener("click", submitJoin);
@@ -169,12 +178,11 @@ class PlayerController {
                 this.gameStarted = false;
                 this.gameFinished = false;
                 if (this.timerCountdownInterval) clearInterval(this.timerCountdownInterval);
-                // Only show waiting room if current player is actually registered in the host's room
-                if (this.currentPlayer && state.players && state.players[this.currentPlayer.id]) {
+
+                // If player has joined, keep them in the waiting room!
+                if (this.currentPlayer) {
                     this.showLobbyWaiting();
                 } else {
-                    this.currentPlayer = null;
-                    try { sessionStorage.removeItem(`acm_player_${this.roomId}`); } catch (e) {}
                     this.switchScreen("screenJoin");
                 }
             }
