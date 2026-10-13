@@ -118,10 +118,10 @@ class Game {
        1. THREE.JS SCENE, CAMERA & LIGHTING
        ----------------------------------------------------- */
     initThree() {
-        // Scene with deep dungeon fog of war
+        // Scene with gentle atmospheric dungeon fog (softer so maze corridors are visible)
         this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(0x05070e);
-        this.scene.fog = new THREE.FogExp2(0x05070e, 0.082);
+        this.scene.background = new THREE.Color(0x080e1d);
+        this.scene.fog = new THREE.FogExp2(0x080e1d, 0.038);
 
         // Localized Follow-Camera (Slanted Top-Down / Isometric perspective)
         const aspect = this.canvas.clientWidth / (this.canvas.clientHeight || 1);
@@ -142,13 +142,17 @@ class Game {
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
         this.renderer.toneMappingExposure = 1.35;
 
-        // Ambient Light (Keeps distant unlit corridors deep in shadow)
-        const ambient = new THREE.AmbientLight(0x0a1024, 0.32);
+        // Ambient Light (Rich midnight blue fill so the maze corridors are clearly discernable)
+        const ambient = new THREE.AmbientLight(0x24365a, 0.72);
         this.scene.add(ambient);
 
-        // Faint overhead moonlit fill (gives subtle contour to wall tops)
-        const moonLight = new THREE.DirectionalLight(0x1e293b, 0.42);
-        moonLight.position.set(30, 45, 20);
+        // Soft Hemisphere Light (Sky cool cyan, ground warm dark stone)
+        const hemiLight = new THREE.HemisphereLight(0x38bdf8, 0x0f172a, 0.48);
+        this.scene.add(hemiLight);
+
+        // Top Directional Light (Highlights wall bevels and flagstone borders)
+        const moonLight = new THREE.DirectionalLight(0x60a5fa, 0.68);
+        moonLight.position.set(25, 45, 18);
         this.scene.add(moonLight);
 
         this.resizeCanvas();
@@ -188,15 +192,17 @@ class Game {
         this.floorMesh.receiveShadow = true;
         this.scene.add(this.floorMesh);
 
-        // Floor Flagstone Tile Accents (Low-poly corridor floor tiles)
+        // Floor Flagstone Tile Accents (Low-poly corridor floor tiles with clear path contrast)
         const tileGeo = new THREE.BoxGeometry(CELL_SIZE - 0.08, 0.04, CELL_SIZE - 0.08);
         const pathTileMat = new THREE.MeshStandardMaterial({
-            color: 0x0f172a,
-            roughness: 0.75,
-            metalness: 0.2
+            color: 0x16233b,
+            roughness: 0.62,
+            metalness: 0.24,
+            emissive: 0x0a1020,
+            emissiveIntensity: 0.22
         });
 
-        // Walls Group (Optimized InstancedMesh for silky 60 FPS performance)
+        // Walls Group (Optimized InstancedMesh with spectral bevel emission for readable layout)
         let wallCount = 0;
         for (let r = 0; r < this.maze.rows; r++) {
             for (let c = 0; c < this.maze.cols; c++) {
@@ -206,9 +212,11 @@ class Game {
 
         const wallGeo = new THREE.BoxGeometry(CELL_SIZE, WALL_HEIGHT, CELL_SIZE);
         const wallMat = new THREE.MeshStandardMaterial({
-            color: 0x1b2438,
-            roughness: 0.72,
-            metalness: 0.22
+            color: 0x243452,
+            roughness: 0.55,
+            metalness: 0.28,
+            emissive: 0x0f1729,
+            emissiveIntensity: 0.38
         });
 
         const wallInstanced = new THREE.InstancedMesh(wallGeo, wallMat, wallCount);
@@ -334,28 +342,56 @@ class Game {
         // -----------------------------------------------------
         // DYNAMIC VISION LIGHTING & LINE-OF-SIGHT SHADOWS
         // -----------------------------------------------------
-        // 1. Warm Player Torch PointLight (Dynamic localized illumination)
-        this.torchLight = new THREE.PointLight(0xffa826, 2.8, 17, 2);
-        this.torchLight.position.set(0.38, 0.9, 0.25);
+        // 1. High-Intensity Warm Player Torch PointLight
+        this.torchLight = new THREE.PointLight(0xffb732, 5.2, 26, 1.8);
+        this.torchLight.position.set(0.38, 0.95, 0.25);
         this.torchLight.castShadow = true;
         this.torchLight.shadow.mapSize.width = 1024;
         this.torchLight.shadow.mapSize.height = 1024;
         this.torchLight.shadow.bias = -0.002;
         this.playerGroup.add(this.torchLight);
 
-        // 2. Forward Tactical Vision Spotlight (Hunter Assassin sweeping vision cone)
-        this.visionSpotLight = new THREE.SpotLight(0xfff5ea, 3.4, 21, Math.PI / 4.2, 0.5, 1.8);
-        this.visionSpotLight.position.set(0, 1.0, 0.2);
+        // 2. High-Powered Forward Tactical Vision Spotlight (Significantly brighter & farther reaching)
+        this.visionSpotLight = new THREE.SpotLight(0xfff8ee, 8.8, 38, Math.PI / 3.6, 0.55, 1.6);
+        this.visionSpotLight.position.set(0, 1.0, 0.25);
         this.visionSpotLight.castShadow = true;
         this.visionSpotLight.shadow.mapSize.width = 1024;
         this.visionSpotLight.shadow.mapSize.height = 1024;
         this.visionSpotLight.shadow.bias = -0.002;
 
         this.spotTarget = new THREE.Object3D();
-        this.spotTarget.position.set(0, 0.5, 5);
+        this.spotTarget.position.set(0, 0.5, 12);
         this.playerGroup.add(this.spotTarget);
         this.visionSpotLight.target = this.spotTarget;
         this.playerGroup.add(this.visionSpotLight);
+
+        // 3. Volumetric Flashlight Beam Cone (Translucent glowing beam slicing through corridors)
+        const beamGeo = new THREE.ConeGeometry(3.6, 14, 16, 1, true);
+        beamGeo.translate(0, -7, 0);
+        beamGeo.rotateX(Math.PI / 2);
+        const beamMat = new THREE.MeshBasicMaterial({
+            color: 0xfff3d6,
+            transparent: true,
+            opacity: 0.12,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            side: THREE.DoubleSide
+        });
+        const beamMesh = new THREE.Mesh(beamGeo, beamMat);
+        beamMesh.position.set(0, 0.95, 0.25);
+        this.playerGroup.add(beamMesh);
+
+        // 4. Glowing Flashlight Lens Flare Disc
+        const flareGeo = new THREE.CircleGeometry(0.18, 16);
+        const flareMat = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.92,
+            blending: THREE.AdditiveBlending
+        });
+        const flareMesh = new THREE.Mesh(flareGeo, flareMat);
+        flareMesh.position.set(0.38, 0.78, 0.38);
+        this.playerGroup.add(flareMesh);
 
         // Orbiting Firefly Wisps
         for (let i = 0; i < 4; i++) {
@@ -911,9 +947,12 @@ class Game {
     }
 
     updateSceneAnimations(dt, time) {
-        // Torch flicker modulation
+        // Torch & Flashlight brightness modulation
         if (this.torchLight) {
-            this.torchLight.intensity = 2.6 + Math.sin(time * 14) * 0.22 + Math.sin(time * 26) * 0.12;
+            this.torchLight.intensity = 5.2 + Math.sin(time * 14) * 0.45 + Math.sin(time * 26) * 0.25;
+        }
+        if (this.visionSpotLight) {
+            this.visionSpotLight.intensity = 8.8 + Math.sin(time * 18) * 0.35;
         }
 
         // Orbiting wisps around player
