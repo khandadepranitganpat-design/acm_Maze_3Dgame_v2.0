@@ -46,7 +46,8 @@ class SoundManager {
             const chords = {
                 'A': [440, 554.37, 659.25], // A major
                 'C': [523.25, 659.25, 783.99], // C major
-                'M': [659.25, 830.61, 987.77]  // E major high
+                'M': [659.25, 830.61, 987.77], // E major high
+                'N': [587.33, 739.99, 880.00]  // D major high
             };
             const freqs = chords[letter] || [523.25, 659.25, 783.99];
 

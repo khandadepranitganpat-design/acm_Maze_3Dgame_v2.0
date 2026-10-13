@@ -157,43 +157,46 @@ button.muted {
 }
 
 .letter-badge {
-    width: 40px;
-    height: 40px;
+    min-width: 66px;
+    height: 38px;
+    padding: 0 8px;
     border-radius: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.25rem;
-    font-weight: 900;
+    font-size: 0.95rem;
+    font-weight: 800;
+    letter-spacing: 0.5px;
     background: rgba(15, 23, 42, 0.9);
-    border: 2px dashed rgba(255, 255, 255, 0.15);
-    color: rgba(255, 255, 255, 0.25);
-    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    border: 2px dashed rgba(255, 255, 255, 0.2);
+    color: rgba(255, 255, 255, 0.45);
+    transition: all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     position: relative;
 }
 
 .letter-badge.badge-a.collected {
     border: 2px solid var(--color-a);
-    background: rgba(255, 183, 3, 0.15);
+    background: rgba(255, 183, 3, 0.18);
     color: var(--color-a);
-    box-shadow: 0 0 16px rgba(255, 183, 3, 0.45);
-    transform: scale(1.08);
+    box-shadow: 0 0 16px rgba(255, 183, 3, 0.5);
+    transform: scale(1.05);
 }
 
 .letter-badge.badge-c.collected {
     border: 2px solid var(--color-c);
-    background: rgba(0, 245, 212, 0.15);
+    background: rgba(0, 245, 212, 0.18);
     color: var(--color-c);
-    box-shadow: 0 0 16px rgba(0, 245, 212, 0.45);
-    transform: scale(1.08);
+    box-shadow: 0 0 16px rgba(0, 245, 212, 0.5);
+    transform: scale(1.05);
 }
 
-.letter-badge.badge-m.collected {
+.letter-badge.badge-m.collected,
+.letter-badge.badge-n.collected {
     border: 2px solid var(--color-m);
-    background: rgba(255, 0, 110, 0.15);
+    background: rgba(255, 0, 110, 0.18);
     color: var(--color-m);
-    box-shadow: 0 0 16px rgba(255, 0, 110, 0.45);
-    transform: scale(1.08);
+    box-shadow: 0 0 16px rgba(255, 0, 110, 0.5);
+    transform: scale(1.05);
 }
 
 .sequence-info {
@@ -258,19 +261,51 @@ button.muted {
     position: relative;
     width: 100%;
     height: 580px;
-    background: #030509;
+    background: #05070e;
     border-radius: 12px;
     border: 1px solid var(--border-color);
     overflow: hidden;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: inset 0 0 35px rgba(0, 0, 0, 0.8), 0 8px 24px rgba(0, 0, 0, 0.6);
+    box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.9), 0 8px 30px rgba(0, 0, 0, 0.7);
+    touch-action: none;
 }
 
 canvas#gameCanvas {
     display: block;
+    width: 100% !important;
+    height: 100% !important;
     cursor: default;
+    touch-action: none;
+}
+
+/* Floating Virtual Joystick for Mobile */
+.virtual-joystick-base {
+    position: absolute;
+    width: 104px;
+    height: 104px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(56, 189, 248, 0.12) 0%, rgba(15, 23, 42, 0.65) 100%);
+    border: 2px solid rgba(56, 189, 248, 0.4);
+    box-shadow: 0 0 24px rgba(56, 189, 248, 0.25);
+    pointer-events: none;
+    display: none;
+    transform: translate(-50%, -50%);
+    z-index: 60;
+}
+
+.virtual-joystick-knob {
+    position: absolute;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #38bdf8 0%, #0284c7 100%);
+    box-shadow: 0 0 16px rgba(56, 189, 248, 0.75);
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
 }
 
 /* Legend / Rules Footer */

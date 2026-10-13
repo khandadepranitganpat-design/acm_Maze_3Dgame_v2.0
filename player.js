@@ -152,7 +152,7 @@ class PlayerController {
                 void numEl.offsetWidth;
                 numEl.style.animation = 'zoomPulse 1s ease-in-out infinite';
 
-                if (subEl) subEl.textContent = "FIND LETTERS A, C, M!";
+                if (subEl) subEl.textContent = "FIND LETTERS A, C, N!";
                 if (window.gameInstance && window.gameInstance.sound) {
                     window.gameInstance.sound.playCountdownBeep(true);
                 }
@@ -242,7 +242,7 @@ class PlayerController {
             const secs = this.timeLimitSeconds % 60;
             const timeFormatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
             const minuteWord = mins === 1 && secs === 0 ? "1 minute" : `${mins} minutes`;
-            statusBanner.textContent = `Race to find letters A, C, M! You have ${minuteWord} (${timeFormatted})!`;
+            statusBanner.textContent = `Race to find letters A, C, N! You have ${minuteWord} (${timeFormatted})!`;
         }
 
         if (this.timerCountdownInterval) clearInterval(this.timerCountdownInterval);

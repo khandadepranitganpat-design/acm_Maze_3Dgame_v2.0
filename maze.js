@@ -111,9 +111,9 @@ class Maze {
         // Shuffle path cells
         pathCells.sort(() => Math.random() - 0.5);
 
-        // Pick distinct positions for letters 'A', 'C', 'M'
+        // Pick distinct positions for letters 'A', 'C', 'N'
         // Ensure distance between each letter is significant
-        const spellLetters = ['A', 'C', 'M'];
+        const spellLetters = ['A', 'C', 'N'];
         this.letters = [];
 
         for (const char of spellLetters) {

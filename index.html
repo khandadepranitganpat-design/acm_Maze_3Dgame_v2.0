@@ -77,7 +77,7 @@
             </div>
 
             <p style="font-size: 0.9rem; color: #bae6fd; font-weight: 600; margin-top: 14px;">
-                Host is setting the round timer.<br>Get ready to hunt letters A, C, and M!
+                Host is setting the round timer.<br>Get ready to hunt letters A, C, and N!
             </p>
         </div>
     </div>
@@ -104,11 +104,11 @@
             <!-- HUD Panel -->
             <div class="hud-panel">
                 <div class="spell-tracker">
-                    <span class="spell-label">Spell:</span>
+                    <span class="spell-label">Targets:</span>
                     <div class="letters-container">
-                        <div id="badgeA" class="letter-badge badge-a">A</div>
-                        <div id="badgeC" class="letter-badge badge-c">C</div>
-                        <div id="badgeM" class="letter-badge badge-m">M</div>
+                        <div id="badgeA" class="letter-badge badge-a">A: [ ]</div>
+                        <div id="badgeC" class="letter-badge badge-c">C: [ ]</div>
+                        <div id="badgeN" class="letter-badge badge-n">N: [ ]</div>
                     </div>
                 </div>
 
@@ -130,12 +130,16 @@
 
             <!-- Status Notification Banner -->
             <div id="statusBanner" class="status-banner">
-                Explore the labyrinth to uncover hidden spell letters A, C, and M!
+                Explore the 3D labyrinth to uncover hidden spell letters A, C, and N!
             </div>
 
             <!-- Canvas Viewport -->
             <div class="canvas-wrapper">
                 <canvas id="gameCanvas"></canvas>
+                <!-- Dynamic Virtual Floating Joystick Overlay for Mobile -->
+                <div id="virtualJoystickBase" class="virtual-joystick-base">
+                    <div id="virtualJoystickKnob" class="virtual-joystick-knob"></div>
+                </div>
             </div>
 
             <!-- Mobile Touch Virtual D-Pad -->
@@ -151,37 +155,37 @@
                 <div class="legend-card">
                     <span class="legend-icon">🎲</span>
                     <div>
-                        <strong>Random ACM Spawns:</strong> Letters A, C, M spawn at fresh randomized coordinates every session.
+                        <strong>Random Spawns:</strong> Letters A, C, N spawn at fresh randomized 3D coordinates every session.
                     </div>
                 </div>
                 <div class="legend-card">
-                    <span class="legend-icon">👁️</span>
+                    <span class="legend-icon">🎥</span>
                     <div>
-                        <strong>Hidden Until Reached:</strong> Letters are invisible until your lantern steps directly onto them.
+                        <strong>3D Follow Camera:</strong> Slanted top-down camera locked to your character in a dynamic localized viewport.
                     </div>
                 </div>
                 <div class="legend-card">
                     <span class="legend-icon">🕯️</span>
                     <div>
-                        <strong>Dynamic Path Render:</strong> Corridors illuminate and render permanently only when travelled.
+                        <strong>Dynamic Line of Sight:</strong> Real-time torch shadows conceal corridors until you turn the corner.
                     </div>
                 </div>
                 <div class="legend-card">
-                    <span class="legend-icon">🧱</span>
+                    <span class="legend-icon">✨</span>
                     <div>
-                        <strong>Faintly Visible Walls:</strong> Maze walls emit an ethereal faint glow so you perceive the labyrinth outline.
+                        <strong>3D Floating Runes:</strong> Discover glowing, rotating 3D collectibles hidden deep in the labyrinth.
                     </div>
                 </div>
                 <div class="legend-card">
                     <span class="legend-icon">🔄</span>
                     <div>
-                        <strong>Any Sequence:</strong> Collect letters in any arbitrary order (e.g., M ➔ A ➔ C or C ➔ M ➔ A).
+                        <strong>Any Sequence:</strong> Collect letters in any arbitrary order (e.g., N ➔ A ➔ C or C ➔ N ➔ A).
                     </div>
                 </div>
                 <div class="legend-card">
                     <span class="legend-icon">🎮</span>
                     <div>
-                        <strong>Controls:</strong> Use <strong>Arrow Keys</strong> or <strong>W, A, S, D</strong> (or touch swipe / on-screen D-Pad).
+                        <strong>Controls:</strong> Virtual touch joystick, screen drag, D-Pad, or Arrow Keys / WASD.
                     </div>
                 </div>
             </div>
@@ -198,7 +202,7 @@
                 SPELL COMPLETED!
             </h2>
             <p id="finishedDesc" style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 24px;">
-                You successfully found and collected letters A, C, and M!
+                You successfully found and collected letters A, C, and N!
             </p>
 
             <div class="modal-stats-grid" style="margin-bottom: 24px;">
@@ -290,6 +294,12 @@
     </div>
 
     <!-- Scripts -->
+    <script src="three.min.js"></script>
+    <script>
+        if (typeof THREE === "undefined") {
+            document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>');
+        }
+    </script>
     <script src="audio.js"></script>
     <script src="maze.js"></script>
     <script src="game.js"></script>

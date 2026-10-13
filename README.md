@@ -41,37 +41,37 @@
 2. **Up to 300 players scan and join instantly**: Works across disparate cellular networks (4G/5G), guest Wi-Fi networks, and desktop browsers without requiring identical local subnets.
 3. **Players wait in the live lobby**: Nicknames are validated in real-time with live player count updates.
 4. **Host triggers synchronized countdown**: A cinematic **3... 2... 1... GO!** sequence flashes across all participant screens simultaneously.
-5. **The Race Begins**: Players guide their torchbearer through a dark 25×25 procedural maze to find hidden **A**, **C**, and **M** runes before the 2-minute timer expires.
-6. **Grand Podium & Leaderboard**: As soon as players finish or time runs out, an animated podium reveals the top 3 champions and complete participant rankings.
+5. **The Race Begins**: Players guide their 3D operative through a dark 25×25 low-poly labyrinth to find hidden **A**, **C**, and **N** runes before the 2-minute timer expires.
+6. **Grand Podium & Leaderboard**: As soon as all players finish or time runs out, an animated podium reveals the top 3 champions and complete participant rankings.
 
 ---
 
 ## ⚡ Key Features
 
+- **🎮 3D Follow-Camera Viewport (v2)**: Slanted top-down follow camera locked onto the player avatar (Hunter Assassin perspective) turning mobile displays into localized exploration windows.
+- **🕯️ Real-Time Line-of-Sight & Soft Shadows**: Dynamic character torch and directional spotlight casting real-time soft shadows against 3D maze geometry to hide corridors around corners.
+- **✨ 3D Low-Poly Collectibles**: Rotating, floating, glowing 3D extruded rune glyphs for target letters **A**, **C**, and **N**.
+- **🕹️ Smooth 360° Touch Joystick & Slide Physics**: Auto-detecting virtual floating joystick, touch-drag pathing, on-screen D-Pad, and desktop keyboard with clean wall-sliding collision physics.
 - **🌐 Cross-Network Multiplayer**: Uses cloud persistence via Upstash Redis and Vercel Serverless Functions to eliminate split-brain issues across different mobile networks.
 - **📱 Instant Zero-Install Access**: Players scan the host screen QR code with standard phone cameras; no downloads, account registrations, or app installations required.
-- **⏱️ Synchronized 2-Minute Countdown**: Universal round timer strictly counting down from `02:00` to `00:00` with instant round termination and auto-transition to final standings.
-- **🏁 Live Finisher Tracking & Podium**: Host projector view and mobile clients track who finishes in real time, concluding with a top 3 gold/silver/bronze podium and full ranking table.
-- **🎮 Touch & Desktop Controls**: Native keyboard support (Arrow keys / WASD) with smooth auto-detecting on-screen virtual D-Pad for mobile devices.
+- **🏁 Automatic Round Conclusion**: Concludes immediately when all players finish or when timer hits 00:00, revealing the podium and leaderboard.
 - **🔊 Procedural Web Audio Engine**: Zero-asset audio powered entirely by native Web Audio API oscillators—footsteps, wall bumps, countdown beeps, rune collection chords, and victory fanfare.
 
 ---
 
-## 🎨 Graphics & Atmospheric Engine
+## 🎨 3D Graphics & Visibility Engine (v2)
 
-The game features a high-fidelity **Canvas 2D graphics engine** delivering a near-realistic dark dungeon aesthetic at a silky 60 FPS:
+The game features a high-performance **Three.js WebGL 3D engine** delivering a stylized dark dungeon aesthetic at a silky 60 FPS:
 
 | Component | Visual Implementation |
 | :--- | :--- |
-| **🧱 Ancient Stone Walls** | Procedurally textured masonry with multi-tone slate palettes, sub-brick courses, staggered mortar lines, and 3D directional top-lit bevels. |
-| **🌿 Weathered Moss & Lichen** | Organic lichen patches and edge wear procedurally seeded across wall surfaces. |
-| **🪨 Flagstone Floor Tiles** | Hand-crafted worn stone slabs with mortar perimeters, variable stone grain, stress fractures, and specular reflections under torchlight. |
-| **🔥 Dynamic Lantern Light** | Multi-tiered volumetric radial illumination (ambient gold, fiery orange, white-hot core) featuring harmonic sinusoidal flame flicker. |
-| **✨ Molten Player Core & Flare** | Breathing corona halo, molten core, six rotating lens flare spikes, and orbiting dancing fire motes. |
-| **👣 Ember Footprint Trail** | Thermal footsteps shifting from lemon-amber to deep smoldering crimson, accompanied by dissipating volumetric smoke puffs. |
-| **🔮 Ancient Runic Glyphs (A, C, M)** | Carved stone floor medallions radiating vertical volumetric light columns, isometric sparkling dust, and concentric shockwave rings. |
-| **🌌 Multi-Tier Atmosphere** | Over 130 ambient motes including wandering cool dust, rising warm embers, and bioluminescent fireflies reactive to torch proximity. |
-| **🎬 Cinematic Post-Processing** | Screen-space vignette edge darkening and subtle film-grain texture overlay. |
+| **🧱 3D Modeled Walls** | Low-poly beveled masonry blocks with height, casting real-time soft shadows into adjacent corridors. |
+| **🪨 Flagstone Floor** | Textured dark slate flagstone corridors receiving dynamic character shadows. |
+| **🔦 Dynamic Torch & Vision Cone** | Real-time PointLight torch + directional forward SpotLight sweeping around corners to reveal corridors. |
+| **👤 3D Operative Avatar** | Stylized operative character with illuminated neon visor, walking sway, and smooth rotation physics. |
+| **🔮 3D Floating Runes (A, C, N)** | Extruded 3D geometric letters floating, rotating, and bobbing over concentric shockwave floor medallions. |
+| **✨ 3D Collection Bursts** | Radiant 3D particle fountains exploding outward upon rune pickup. |
+| **🌌 Viewport Fog of War** | Exponential dungeon fog shrouding distant corridors beyond the immediate line of sight. |
 
 ---
 
