@@ -1,43 +1,107 @@
 /**
  * Vercel Serverless Function: Real-Time Room State Manager
- * Enables seamless cross-network multiplayer across 4G/5G/Wi-Fi worldwide.
+ * Powered by high-speed global Redis persistence + in-memory warm cache.
+ * Eliminates serverless split-brain: all 300 players share the exact same room state
+ * across all cellular networks (4G/5G) and Wi-Fi connections worldwide.
  */
 
-// Global room state container (persisted across warm serverless invocations)
+// Persistent Redis backend configuration (free serverless cloud store)
+const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL || "https://grateful-walleye-229146.upstash.io";
+const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || "gQAAAAAAA38aAQIgcDI5MmU3Y2I1ZGVhMjc0MzA2YmE5NmEwYWRiM2UyMWE5Yg";
+
+// Local fallback in case of network timeout
 if (!global.__ACM_ROOMS__) {
     global.__ACM_ROOMS__ = {};
 }
-const rooms = global.__ACM_ROOMS__;
+const localMemoryRooms = global.__ACM_ROOMS__;
 
-function getOrCreateRoom(roomId) {
-    const id = (roomId || "ACM2026").toUpperCase();
-    if (!rooms[id]) {
-        rooms[id] = {
-            id,
-            status: "LOBBY", // LOBBY | COUNTDOWN | STARTED | ENDED
-            timeLimit: 120,
-            startTime: null,
-            countdownStart: null,
-            players: {},
-            lastUpdated: Date.now()
-        };
-    }
-    return rooms[id];
+function getDefaultRoom(id) {
+    return {
+        id,
+        status: "LOBBY", // LOBBY | COUNTDOWN | STARTED | ENDED
+        timeLimit: 120,
+        startTime: null,
+        countdownStart: null,
+        players: {},
+        lastUpdated: Date.now()
+    };
 }
 
-module.exports = function handler(req, res) {
+async function redisCommand(commandArray) {
+    if (!REDIS_URL || !REDIS_TOKEN) return null;
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2500);
+
+        const response = await fetch(REDIS_URL, {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${REDIS_TOKEN}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(commandArray),
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+            const data = await response.json();
+            return data.result;
+        }
+    } catch (e) {
+        // Fallback to local memory gracefully if Redis is momentarily unreachable
+        console.warn("Redis fetch error:", e.message);
+    }
+    return null;
+}
+
+async function getRoomState(roomId) {
+    const id = (roomId || "ACM2026").toUpperCase();
+    const redisKey = `acm_room_${id}`;
+
+    // Fetch from persistent Redis
+    const raw = await redisCommand(["GET", redisKey]);
+    if (raw) {
+        try {
+            const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+            if (parsed && parsed.id) {
+                localMemoryRooms[id] = parsed;
+                return parsed;
+            }
+        } catch (e) {}
+    }
+
+    // Fallback to memory or create new
+    if (!localMemoryRooms[id]) {
+        localMemoryRooms[id] = getDefaultRoom(id);
+        await saveRoomState(id, localMemoryRooms[id]);
+    }
+    return localMemoryRooms[id];
+}
+
+async function saveRoomState(roomId, room) {
+    const id = (roomId || "ACM2026").toUpperCase();
+    room.lastUpdated = Date.now();
+    localMemoryRooms[id] = room;
+
+    const redisKey = `acm_room_${id}`;
+    // Save to Redis with 24-hour expiration (86400 seconds)
+    await redisCommand(["SET", redisKey, JSON.stringify(room), "EX", "86400"]);
+}
+
+module.exports = async function handler(req, res) {
     // Enable CORS for all devices & origins
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
 
     if (req.method === "OPTIONS") {
         return res.status(200).end();
     }
 
     const roomId = (req.query.roomId || (req.body && req.body.roomId) || "ACM2026").toUpperCase();
-    const room = getOrCreateRoom(roomId);
+    let room = await getRoomState(roomId);
 
     if (req.method === "GET") {
         return res.status(200).json({ success: true, room });
@@ -53,9 +117,10 @@ module.exports = function handler(req, res) {
                 return res.status(400).json({ success: false, error: "Please enter a nickname." });
             }
 
-            // Check if name is already taken (case-insensitive)
+            // Case-insensitive duplicate name check
             const cleanName = name.toLowerCase();
-            const isTaken = Object.values(room.players).some(p => p.name && p.name.toLowerCase() === cleanName);
+            const existingPlayers = Object.values(room.players || {});
+            const isTaken = existingPlayers.some(p => p.name && p.name.toLowerCase() === cleanName);
             if (isTaken) {
                 return res.status(400).json({ success: false, error: `The name "${name}" is already taken! Please enter a different name.` });
             }
@@ -70,8 +135,9 @@ module.exports = function handler(req, res) {
                 finishTimeFormatted: null
             };
 
+            if (!room.players) room.players = {};
             room.players[playerId] = playerObj;
-            room.lastUpdated = Date.now();
+            await saveRoomState(roomId, room);
 
             return res.status(200).json({ success: true, playerId, player: playerObj, room });
         }
@@ -82,15 +148,17 @@ module.exports = function handler(req, res) {
             room.timeLimit = timeLimit;
             room.countdownStart = Date.now();
             room.startTime = null;
-            room.lastUpdated = Date.now();
 
-            // Reset player finisher stats
-            Object.values(room.players).forEach(p => {
-                p.finished = false;
-                p.finishTimeSeconds = null;
-                p.finishTimeFormatted = null;
-            });
+            // Reset player finisher stats for new round
+            if (room.players) {
+                Object.values(room.players).forEach(p => {
+                    p.finished = false;
+                    p.finishTimeSeconds = null;
+                    p.finishTimeFormatted = null;
+                });
+            }
 
+            await saveRoomState(roomId, room);
             return res.status(200).json({ success: true, room });
         }
 
@@ -99,25 +167,25 @@ module.exports = function handler(req, res) {
             room.status = "STARTED";
             room.timeLimit = timeLimit;
             room.startTime = Date.now();
-            room.lastUpdated = Date.now();
 
+            await saveRoomState(roomId, room);
             return res.status(200).json({ success: true, room });
         }
 
         if (action === "finish") {
             const playerId = body.playerId;
-            if (playerId && room.players[playerId]) {
+            if (playerId && room.players && room.players[playerId]) {
                 room.players[playerId].finished = true;
                 room.players[playerId].finishTimeSeconds = body.seconds;
                 room.players[playerId].finishTimeFormatted = body.formatted;
-                room.lastUpdated = Date.now();
+                await saveRoomState(roomId, room);
             }
             return res.status(200).json({ success: true, room });
         }
 
         if (action === "end") {
             room.status = "ENDED";
-            room.lastUpdated = Date.now();
+            await saveRoomState(roomId, room);
             return res.status(200).json({ success: true, room });
         }
 
@@ -126,7 +194,7 @@ module.exports = function handler(req, res) {
             room.startTime = null;
             room.countdownStart = null;
             room.players = {};
-            room.lastUpdated = Date.now();
+            await saveRoomState(roomId, room);
             return res.status(200).json({ success: true, room });
         }
 

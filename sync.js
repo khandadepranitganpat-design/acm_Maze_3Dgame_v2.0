@@ -1,17 +1,18 @@
 /**
  * ACM Spell Maze - Universal Real-Time Synchronization Engine
  * Automatically selects the best sync provider:
- * 1. Vercel Serverless API (/api/room) — works worldwide across 4G/5G/Wi-Fi with zero setup on Vercel!
- * 2. Firebase Cloud Firestore — alternative high-concurrency cloud backend.
- * 3. Local BroadcastChannel + LocalStorage — instant fallback for offline cross-tab testing.
+ * 1. Vercel Serverless API (/api/room) with Cloud Persistence
+ * 2. Firebase Cloud Firestore
+ * 3. Local BroadcastChannel + LocalStorage (Offline testing fallback)
  */
 
 class GameSync {
     constructor(roomId = "ACM2026") {
         this.roomId = (roomId || "ACM2026").toUpperCase();
-        this.provider = "LOCAL"; // "VERCEL" | "FIREBASE" | "LOCAL"
+        this.provider = null; // Will resolve via initPromise
         this.db = null;
         this.listeners = [];
+        this.isPolling = false;
         this.cachedState = {
             status: "LOBBY", // LOBBY | COUNTDOWN | STARTED | ENDED
             timeLimit: 120, // seconds
@@ -20,7 +21,7 @@ class GameSync {
             players: {}
         };
 
-        this.init();
+        this.initPromise = this.init();
     }
 
     async init() {
@@ -31,7 +32,7 @@ class GameSync {
             return;
         }
 
-        // Priority 2: Check if Vercel /api/room is available
+        // Priority 2: Check if Vercel /api/room is reachable
         const hasVercelApi = await this.checkVercelApi();
         if (hasVercelApi) {
             this.provider = "VERCEL";
@@ -39,7 +40,7 @@ class GameSync {
             return;
         }
 
-        // Priority 3: Local cross-tab sync
+        // Priority 3: Local cross-tab sync fallback
         this.provider = "LOCAL";
         this.initLocalSync();
     }
@@ -47,10 +48,17 @@ class GameSync {
     async checkVercelApi() {
         if (window.location.protocol === "file:") return false;
         try {
-            const res = await fetch(`/api/room?roomId=${this.roomId}`, { method: "GET" });
+            const res = await fetch(`/api/room?roomId=${this.roomId}`, {
+                method: "GET",
+                cache: "no-store"
+            });
             if (res.ok) {
                 const data = await res.json();
-                return data && data.success;
+                if (data && data.room) {
+                    this.cachedState = Object.assign(this.cachedState, data.room);
+                    this.notifyListeners();
+                }
+                return true;
             }
         } catch (e) {}
         return false;
@@ -61,9 +69,14 @@ class GameSync {
        ----------------------------------------------------- */
     initVercelSync() {
         console.log("⚡ Vercel Cloud Serverless Sync Active for Room:", this.roomId);
+        if (this.isPolling) return;
+        this.isPolling = true;
+
         const pollRoom = async () => {
             try {
-                const res = await fetch(`/api/room?roomId=${this.roomId}`);
+                const res = await fetch(`/api/room?roomId=${this.roomId}`, {
+                    cache: "no-store"
+                });
                 if (res.ok) {
                     const data = await res.json();
                     if (data && data.room) {
@@ -75,7 +88,7 @@ class GameSync {
         };
 
         pollRoom();
-        setInterval(pollRoom, 450); // Fast 450ms poll for real-time responsiveness
+        setInterval(pollRoom, 400); // Poll every 400ms for tight sync
     }
 
     async vercelAction(action, payload = {}) {
@@ -86,7 +99,7 @@ class GameSync {
                 body: JSON.stringify({ action, roomId: this.roomId, ...payload })
             });
             const data = await res.json();
-            if (data.room) {
+            if (data && data.room) {
                 this.cachedState = Object.assign(this.cachedState, data.room);
                 this.notifyListeners();
             }
@@ -227,6 +240,11 @@ class GameSync {
     }
 
     async joinPlayer(name) {
+        // Ensure provider initialization has finished
+        if (this.initPromise) {
+            await this.initPromise;
+        }
+
         const trimmed = name.trim();
         if (!trimmed) {
             return { success: false, error: "Please enter a valid nickname." };
@@ -280,6 +298,8 @@ class GameSync {
     }
 
     async markPlayerFinished(playerId, seconds, formatted) {
+        if (this.initPromise) await this.initPromise;
+
         if (this.provider === "VERCEL") {
             return await this.vercelAction("finish", { playerId, seconds, formatted });
         }
@@ -312,6 +332,7 @@ class GameSync {
     }
 
     async startHostGame(timeLimitSeconds) {
+        if (this.initPromise) await this.initPromise;
         const timeLimit = Math.max(10, parseInt(timeLimitSeconds) || 120);
 
         if (this.provider === "VERCEL") {
@@ -360,6 +381,7 @@ class GameSync {
     }
 
     async endHostGame() {
+        if (this.initPromise) await this.initPromise;
         if (this.provider === "VERCEL") {
             return await this.vercelAction("end");
         }
@@ -376,6 +398,7 @@ class GameSync {
     }
 
     async resetRoom() {
+        if (this.initPromise) await this.initPromise;
         if (this.provider === "VERCEL") {
             return await this.vercelAction("reset");
         }
