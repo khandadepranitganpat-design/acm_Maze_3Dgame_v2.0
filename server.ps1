@@ -174,6 +174,12 @@ while ($true) {
                         continue
                     }
 
+                    if ($action -eq "config") {
+                        if ($jsonBody.timeLimit) {
+                            $room.timeLimit = [int]$jsonBody.timeLimit
+                        }
+                    }
+
                     if ($action -eq "countdown") {
                         $tLimit = if ($jsonBody.timeLimit) { [int]$jsonBody.timeLimit } else { 120 }
                         $room.status = "COUNTDOWN"

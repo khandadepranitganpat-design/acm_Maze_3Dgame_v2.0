@@ -128,7 +128,7 @@ class Maze {
         // Shuffle candidate cells
         candidateCells.sort(() => Math.random() - 0.5);
 
-        const targetChars = ['A', 'C', 'N'];
+        const targetChars = ['A', 'C', 'M'];
         this.letters = [];
 
         for (const char of targetChars) {
@@ -279,5 +279,26 @@ class Maze {
 
     isComplete() {
         return this.letters.every(l => l.collected);
+    }
+
+    exportState() {
+        return {
+            cols: this.cols,
+            rows: this.rows,
+            cells: this.cells,
+            letters: this.letters,
+            startPos: this.startPos,
+            traveled: this.traveled
+        };
+    }
+
+    importState(saved) {
+        if (!saved) return;
+        if (saved.cols) this.cols = saved.cols;
+        if (saved.rows) this.rows = saved.rows;
+        if (saved.cells) this.cells = saved.cells;
+        if (saved.letters) this.letters = saved.letters;
+        if (saved.startPos) this.startPos = saved.startPos;
+        if (saved.traveled) this.traveled = saved.traveled;
     }
 }

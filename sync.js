@@ -357,6 +357,25 @@ class GameSync {
         }
     }
 
+    async setLobbyTimeLimit(timeLimitSeconds) {
+        if (this.initPromise) await this.initPromise;
+        const timeLimit = Math.max(10, parseInt(timeLimitSeconds) || 120);
+        this.cachedState.timeLimit = timeLimit;
+
+        if (this.provider === "VERCEL") {
+            return await this.vercelAction("config", { timeLimit });
+        }
+        if (this.provider === "FIREBASE" && this.db) {
+            try {
+                const { doc, setDoc } = await import("https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore.js");
+                const roomRef = doc(this.db, "acm_rooms", this.roomId);
+                await setDoc(roomRef, { timeLimit }, { merge: true });
+            } catch (e) {}
+            return;
+        }
+        this.saveLocalState();
+    }
+
     async startHostGame(timeLimitSeconds) {
         if (this.initPromise) await this.initPromise;
         const timeLimit = Math.max(10, parseInt(timeLimitSeconds) || 120);

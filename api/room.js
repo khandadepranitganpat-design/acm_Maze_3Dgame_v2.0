@@ -22,6 +22,7 @@ function getDefaultRoom(id) {
         timeLimit: 120,
         startTime: null,
         countdownStart: null,
+        matchEndTime: null,
         players: {},
         lastUpdated: Date.now()
     };
@@ -120,15 +121,17 @@ module.exports = async function handler(req, res) {
         if (Date.now() >= room.countdownStart + 3000) {
             room.status = "STARTED";
             if (!room.startTime) room.startTime = room.countdownStart + 3000;
+            room.matchEndTime = room.startTime + ((room.timeLimit || 120) * 1000);
             await saveRoomState(roomId, room);
         }
     }
 
-    // Auto-advance from STARTED to ENDED if all players are finished or time limit expired
+    // Auto-advance from STARTED to ENDED if all players are finished or global clock expired
     if (room.status === "STARTED") {
         const playerList = Object.values(room.players || {});
         const allFinished = playerList.length > 0 && playerList.every(p => p.finished);
-        const timeExpired = room.startTime && room.timeLimit && (Date.now() >= room.startTime + (room.timeLimit * 1000));
+        const timeExpired = (room.matchEndTime && Date.now() >= room.matchEndTime) ||
+                            (room.startTime && room.timeLimit && Date.now() >= room.startTime + (room.timeLimit * 1000));
         if (allFinished || timeExpired) {
             room.status = "ENDED";
             await saveRoomState(roomId, room);
@@ -142,6 +145,14 @@ module.exports = async function handler(req, res) {
     if (req.method === "POST") {
         const body = req.body || {};
         const action = body.action;
+
+        if (action === "config") {
+            if (body.timeLimit) {
+                room.timeLimit = Math.max(10, parseInt(body.timeLimit) || 120);
+            }
+            await saveRoomState(roomId, room);
+            return res.status(200).json({ success: true, room });
+        }
 
         if (action === "join") {
             const name = (body.name || "").trim();
@@ -181,6 +192,7 @@ module.exports = async function handler(req, res) {
             room.timeLimit = timeLimit;
             room.countdownStart = now;
             room.startTime = now + 3000;
+            room.matchEndTime = room.startTime + (timeLimit * 1000);
 
             // Reset player finisher stats for new round
             if (room.players) {
@@ -200,6 +212,7 @@ module.exports = async function handler(req, res) {
             room.status = "STARTED";
             room.timeLimit = timeLimit;
             if (!room.startTime) room.startTime = Date.now();
+            room.matchEndTime = room.startTime + (timeLimit * 1000);
 
             // Ensure player finisher stats are clean if start triggered without countdown
             if (room.players && !room.countdownStart) {

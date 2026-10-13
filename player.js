@@ -29,6 +29,14 @@ class PlayerController {
             const saved = sessionStorage.getItem(`acm_player_${this.roomId}`);
             if (saved) {
                 this.currentPlayer = JSON.parse(saved);
+                const nameInput = document.getElementById("inputNickname");
+                if (nameInput && this.currentPlayer.name) {
+                    nameInput.value = this.currentPlayer.name;
+                }
+            }
+            const activeGame = sessionStorage.getItem(`acm_active_game_${this.roomId}`);
+            if (activeGame) {
+                this.savedActiveGame = JSON.parse(activeGame);
             }
         } catch (e) {}
     }
@@ -190,14 +198,14 @@ class PlayerController {
                 void numEl.offsetWidth;
                 numEl.style.animation = 'zoomPulse 1s ease-in-out infinite';
 
-                if (subEl) subEl.textContent = "FIND LETTERS A, C, N!";
+                if (subEl) subEl.textContent = "FIND LETTERS A, C, M!";
                 if (window.gameInstance && window.gameInstance.sound) {
                     window.gameInstance.sound.playCountdownBeep(true);
                 }
 
                 // EXACT 3-SECOND MARK: START GAME IMMEDIATELY WITH ZERO DELAY!
                 if (this.currentPlayer && !this.gameStarted && !this.gameFinished) {
-                    this.launchGame(this.cachedTimeLimit || 120, this.cachedStartTime || Date.now());
+                    this.launchGame(this.cachedTimeLimit || 120, this.cachedStartTime || Date.now(), this.cachedMatchEndTime);
                 }
 
                 // Hide overlay after quick 350ms "GO!" flash directly into the live game
@@ -223,12 +231,17 @@ class PlayerController {
 
     listenToSync() {
         this.sync.onUpdate((state) => {
+            const now = Date.now();
+            const limit = state.timeLimit || 120;
+            const endTime = state.matchEndTime || (state.startTime ? state.startTime + (limit * 1000) : null);
+            const remaining = endTime ? Math.ceil((endTime - now) / 1000) : limit;
+
             // If host triggers 3-second countdown
             if (state.status === "COUNTDOWN") {
-                this.cachedTimeLimit = state.timeLimit || 120;
-                this.cachedStartTime = state.startTime || (state.countdownStart ? state.countdownStart + 3000 : Date.now() + 3000);
+                this.cachedTimeLimit = limit;
+                this.cachedStartTime = state.startTime || (state.countdownStart ? state.countdownStart + 3000 : now + 3000);
+                this.cachedMatchEndTime = endTime || (this.cachedStartTime + limit * 1000);
                 if (this.currentPlayer && !this.gameStarted) {
-                    // Pre-switch directly to screenGame behind overlay so no lobby/joining screen is ever exposed
                     this.switchScreen("screenGame");
                     if (window.gameInstance) {
                         window.gameInstance.resizeCanvas();
@@ -237,13 +250,23 @@ class PlayerController {
                 }
             } else if (state.status === "STARTED") {
                 this.hideCountdownOverlay();
-                if (this.currentPlayer && !this.gameStarted && !this.gameFinished) {
-                    this.launchGame(state.timeLimit, state.startTime);
+                if (this.currentPlayer) {
+                    // Check if time expired according to server-authoritative global match clock
+                    if (endTime && remaining <= 0) {
+                        this.handleTimeExpired();
+                    } else if (!this.gameStarted && !this.gameFinished) {
+                        // Rehydrate or launch session directly into active game view
+                        this.launchGame(limit, state.startTime, endTime);
+                    } else if (this.gameStarted) {
+                        // Keep server-authoritative clock synchronized
+                        this.matchEndTime = endTime;
+                        this.remainingSeconds = remaining;
+                        this.updateTimerDisplay();
+                    }
                 }
             } else if (state.status === "ENDED") {
                 this.hideCountdownOverlay();
-                // Restrict leaderboard display to game-over events (e.g., when the player wins by collecting all letters)
-                if (this.currentPlayer && this.gameFinished) {
+                if (this.currentPlayer && (this.gameFinished || this.savedActiveGame)) {
                     this.showLeaderboard(state);
                 }
             } else if (state.status === "LOBBY") {
@@ -259,17 +282,20 @@ class PlayerController {
         });
     }
 
-    launchGame(timeLimit, startTime) {
+    launchGame(timeLimit, startTime, matchEndTime) {
         if (this.gameStarted) return;
         this.gameStarted = true;
         this.gameFinished = false;
         this.finishTimestamp = null;
         this.timeLimitSeconds = timeLimit || 120;
-        this.remainingSeconds = this.timeLimitSeconds;
+
+        const now = Date.now();
+        this.matchEndTime = matchEndTime || (startTime ? startTime + (this.timeLimitSeconds * 1000) : now + (this.timeLimitSeconds * 1000));
+        this.remainingSeconds = Math.max(0, Math.ceil((this.matchEndTime - now) / 1000));
 
         this.switchScreen("screenGame");
 
-        // Start countdown timer
+        // Start countdown timer banner
         const timerVal = document.getElementById("timerVal");
         const statusBanner = document.getElementById("statusBanner");
         if (statusBanner) {
@@ -277,36 +303,34 @@ class PlayerController {
             const secs = this.timeLimitSeconds % 60;
             const timeFormatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
             const minuteWord = mins === 1 && secs === 0 ? "1 minute" : `${mins} minutes`;
-            statusBanner.textContent = `Race to find letters A, C, N! You have ${minuteWord} (${timeFormatted})!`;
+            statusBanner.textContent = `Race to find letters A, C, M! You have ${minuteWord} (${timeFormatted})!`;
         }
 
         if (this.timerCountdownInterval) clearInterval(this.timerCountdownInterval);
-
-        // Adjust remaining time based on server start time if available
-        if (startTime) {
-            const elapsed = Math.floor((Date.now() - startTime) / 1000);
-            this.remainingSeconds = Math.max(0, this.timeLimitSeconds - elapsed);
-        }
-
         this.updateTimerDisplay();
 
+        // Server-Authoritative Global Match Clock Ticker
         this.timerCountdownInterval = setInterval(() => {
-            this.remainingSeconds--;
+            const currentNow = Date.now();
+            this.remainingSeconds = Math.max(0, Math.ceil((this.matchEndTime - currentNow) / 1000));
             this.updateTimerDisplay();
 
             if (this.remainingSeconds <= 0) {
                 clearInterval(this.timerCountdownInterval);
-                // Timer expired!
                 this.handleTimeExpired();
             }
         }, 1000);
 
-        // Reset game instance maze
+        // Rehydrate or reset game instance
         if (window.gameInstance) {
             window.gameInstance.resizeCanvas();
-            window.gameInstance.resetGame();
-            // Hook completion callback:
-            // "after collecting all letters people automatically land on waiting page again until timer goes off or host end game"
+            let rehydrated = false;
+            if (this.savedActiveGame) {
+                rehydrated = window.gameInstance.rehydrate(this.savedActiveGame);
+            }
+            if (!rehydrated) {
+                window.gameInstance.resetGame();
+            }
             window.gameInstance.onSpellComplete = (stats) => {
                 this.onPlayerCompletedSpell(stats);
             };
@@ -355,6 +379,9 @@ class PlayerController {
         if (finishOrderDisplay) finishOrderDisplay.textContent = stats.sequence.join(' ➔ ');
 
         this.switchScreen("screenFinishedWaiting");
+        try {
+            sessionStorage.removeItem(`acm_active_game_${this.roomId}`);
+        } catch (e) {}
 
         // Victory event: automatically reveal leaderboard rankings after brief celebratory card
         setTimeout(() => {
@@ -366,6 +393,9 @@ class PlayerController {
         if (this.gameFinished) return;
         this.gameFinished = true;
         this.finishTimestamp = null;
+        try {
+            sessionStorage.removeItem(`acm_active_game_${this.roomId}`);
+        } catch (e) {}
 
         // Player ran out of time without finding all letters (Game over event)
         this.switchScreen("screenFinishedWaiting");
