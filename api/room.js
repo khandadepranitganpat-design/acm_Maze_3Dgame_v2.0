@@ -103,6 +103,15 @@ module.exports = async function handler(req, res) {
     const roomId = (req.query.roomId || (req.body && req.body.roomId) || "ACM2026").toUpperCase();
     let room = await getRoomState(roomId);
 
+    // Auto-advance from COUNTDOWN to STARTED once the 3-second countdown duration finishes
+    if (room.status === "COUNTDOWN" && room.countdownStart) {
+        if (Date.now() >= room.countdownStart + 3000) {
+            room.status = "STARTED";
+            if (!room.startTime) room.startTime = room.countdownStart + 3000;
+            await saveRoomState(roomId, room);
+        }
+    }
+
     if (req.method === "GET") {
         return res.status(200).json({ success: true, room });
     }
@@ -144,10 +153,11 @@ module.exports = async function handler(req, res) {
 
         if (action === "countdown") {
             const timeLimit = Math.max(10, parseInt(body.timeLimit) || 120);
+            const now = Date.now();
             room.status = "COUNTDOWN";
             room.timeLimit = timeLimit;
-            room.countdownStart = Date.now();
-            room.startTime = null;
+            room.countdownStart = now;
+            room.startTime = now + 3000;
 
             // Reset player finisher stats for new round
             if (room.players) {
@@ -166,7 +176,7 @@ module.exports = async function handler(req, res) {
             const timeLimit = Math.max(10, parseInt(body.timeLimit) || 120);
             room.status = "STARTED";
             room.timeLimit = timeLimit;
-            room.startTime = Date.now();
+            if (!room.startTime) room.startTime = Date.now();
 
             await saveRoomState(roomId, room);
             return res.status(200).json({ success: true, room });

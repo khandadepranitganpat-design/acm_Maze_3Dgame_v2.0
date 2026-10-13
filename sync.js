@@ -81,6 +81,14 @@ class GameSync {
                     const data = await res.json();
                     if (data && data.room) {
                         this.cachedState = Object.assign(this.cachedState, data.room);
+                        if (this.cachedState.status === "COUNTDOWN" && this.cachedState.countdownStart) {
+                            if (Date.now() >= this.cachedState.countdownStart + 3000) {
+                                this.cachedState.status = "STARTED";
+                                if (!this.cachedState.startTime) {
+                                    this.cachedState.startTime = this.cachedState.countdownStart + 3000;
+                                }
+                            }
+                        }
                         this.notifyListeners();
                     }
                 }
@@ -340,7 +348,7 @@ class GameSync {
             await this.vercelAction("countdown", { timeLimit });
             setTimeout(async () => {
                 await this.vercelAction("start", { timeLimit });
-            }, 3500);
+            }, 3000);
             return;
         }
 
@@ -348,10 +356,12 @@ class GameSync {
             try {
                 const { doc, setDoc } = await import("https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore.js");
                 const roomRef = doc(this.db, "acm_rooms", this.roomId);
+                const now = Date.now();
                 await setDoc(roomRef, {
                     status: "COUNTDOWN",
                     timeLimit: timeLimit,
-                    countdownStart: Date.now()
+                    countdownStart: now,
+                    startTime: now + 3000
                 }, { merge: true });
 
                 setTimeout(async () => {
@@ -360,7 +370,7 @@ class GameSync {
                         status: "STARTED",
                         startTime: serverTimestamp()
                     }, { merge: true });
-                }, 3500);
+                }, 3000);
             } catch (e) {}
             return;
         }

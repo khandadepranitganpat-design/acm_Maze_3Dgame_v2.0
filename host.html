@@ -640,10 +640,15 @@
                     void numEl.offsetWidth;
                     numEl.style.animation = 'zoomPulse 1s ease-in-out infinite';
                     sound.playCountdownBeep(true);
-                } else {
+
+                    // Switch immediately to game phase on host screen at GO!
+                    showPhase("hostGamePhase");
+                    setTimeout(() => {
+                        hideHostCountdown();
+                    }, 350);
+
                     clearInterval(hostCountdownInterval);
                     hostCountdownInterval = null;
-                    overlay.classList.remove("active");
                 }
             }, 1000);
         }

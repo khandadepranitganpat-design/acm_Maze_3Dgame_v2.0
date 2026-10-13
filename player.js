@@ -156,10 +156,19 @@ class PlayerController {
                 if (window.gameInstance && window.gameInstance.sound) {
                     window.gameInstance.sound.playCountdownBeep(true);
                 }
-            } else {
+
+                // EXACT 3-SECOND MARK: START GAME IMMEDIATELY WITH ZERO DELAY!
+                if (this.currentPlayer && !this.gameStarted && !this.gameFinished) {
+                    this.launchGame(this.cachedTimeLimit || 120, this.cachedStartTime || Date.now());
+                }
+
+                // Hide overlay after quick 350ms "GO!" flash directly into the live game
+                setTimeout(() => {
+                    this.hideCountdownOverlay();
+                }, 350);
+
                 clearInterval(this.countdownTimerInterval);
                 this.countdownTimerInterval = null;
-                overlay.classList.remove("active");
             }
         }, 1000);
     }
@@ -178,7 +187,14 @@ class PlayerController {
         this.sync.onUpdate((state) => {
             // If host triggers 3-second countdown
             if (state.status === "COUNTDOWN") {
+                this.cachedTimeLimit = state.timeLimit || 120;
+                this.cachedStartTime = state.startTime || (state.countdownStart ? state.countdownStart + 3000 : Date.now() + 3000);
                 if (this.currentPlayer && !this.gameStarted) {
+                    // Pre-switch directly to screenGame behind overlay so no lobby/joining screen is ever exposed
+                    this.switchScreen("screenGame");
+                    if (window.gameInstance) {
+                        window.gameInstance.resizeCanvas();
+                    }
                     this.showCountdownOverlay();
                 }
             } else if (state.status === "STARTED") {
@@ -208,6 +224,7 @@ class PlayerController {
     }
 
     launchGame(timeLimit, startTime) {
+        if (this.gameStarted) return;
         this.gameStarted = true;
         this.gameFinished = false;
         this.timeLimitSeconds = timeLimit || 120;
