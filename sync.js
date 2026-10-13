@@ -316,16 +316,27 @@ class GameSync {
             try {
                 const { doc, setDoc } = await import("https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore.js");
                 const roomRef = doc(this.db, "acm_rooms", this.roomId);
-                await setDoc(roomRef, {
+                const updatedPlayer = {
+                    ...this.cachedState.players[playerId],
+                    finished: true,
+                    finishTimeSeconds: seconds,
+                    finishTimeFormatted: formatted
+                };
+
+                const updatePayload = {
                     players: {
-                        [playerId]: {
-                            ...this.cachedState.players[playerId],
-                            finished: true,
-                            finishTimeSeconds: seconds,
-                            finishTimeFormatted: formatted
-                        }
+                        [playerId]: updatedPlayer
                     }
-                }, { merge: true });
+                };
+
+                // Check if all players finished
+                const allPlayers = { ...this.cachedState.players, [playerId]: updatedPlayer };
+                const pList = Object.values(allPlayers);
+                if (this.cachedState.status === "STARTED" && pList.length > 0 && pList.every(p => p.finished)) {
+                    updatePayload.status = "ENDED";
+                }
+
+                await setDoc(roomRef, updatePayload, { merge: true });
             } catch (e) {}
             return;
         }
@@ -335,6 +346,13 @@ class GameSync {
             this.cachedState.players[playerId].finished = true;
             this.cachedState.players[playerId].finishTimeSeconds = seconds;
             this.cachedState.players[playerId].finishTimeFormatted = formatted;
+
+            // Check if all players have completed the game
+            const pList = Object.values(this.cachedState.players);
+            if (this.cachedState.status === "STARTED" && pList.length > 0 && pList.every(p => p.finished)) {
+                this.cachedState.status = "ENDED";
+            }
+
             this.saveLocalState();
         }
     }
@@ -357,11 +375,22 @@ class GameSync {
                 const { doc, setDoc } = await import("https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore.js");
                 const roomRef = doc(this.db, "acm_rooms", this.roomId);
                 const now = Date.now();
+
+                // Reset finisher stats in cached players
+                if (this.cachedState.players) {
+                    Object.values(this.cachedState.players).forEach(p => {
+                        p.finished = false;
+                        p.finishTimeSeconds = null;
+                        p.finishTimeFormatted = null;
+                    });
+                }
+
                 await setDoc(roomRef, {
                     status: "COUNTDOWN",
                     timeLimit: timeLimit,
                     countdownStart: now,
-                    startTime: now + 3000
+                    startTime: now + 3000,
+                    players: this.cachedState.players || {}
                 }, { merge: true });
 
                 setTimeout(async () => {
@@ -379,6 +408,13 @@ class GameSync {
         this.cachedState.status = "COUNTDOWN";
         this.cachedState.timeLimit = timeLimit;
         this.cachedState.countdownStart = Date.now();
+        if (this.cachedState.players) {
+            Object.values(this.cachedState.players).forEach(p => {
+                p.finished = false;
+                p.finishTimeSeconds = null;
+                p.finishTimeFormatted = null;
+            });
+        }
         this.saveLocalState();
 
         setTimeout(() => {

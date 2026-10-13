@@ -100,7 +100,7 @@ module.exports = async function handler(req, res) {
         return res.status(200).end();
     }
 
-    const roomId = (req.query.roomId || (req.body && req.body.roomId) || "ACM2026").toUpperCase();
+    const roomId = ((req.query && req.query.roomId) || (req.body && req.body.roomId) || "ACM2026").toUpperCase();
     let room = await getRoomState(roomId);
 
     // Auto-advance from COUNTDOWN to STARTED once the 3-second countdown duration finishes
@@ -108,6 +108,17 @@ module.exports = async function handler(req, res) {
         if (Date.now() >= room.countdownStart + 3000) {
             room.status = "STARTED";
             if (!room.startTime) room.startTime = room.countdownStart + 3000;
+            await saveRoomState(roomId, room);
+        }
+    }
+
+    // Auto-advance from STARTED to ENDED if all players are finished or time limit expired
+    if (room.status === "STARTED") {
+        const playerList = Object.values(room.players || {});
+        const allFinished = playerList.length > 0 && playerList.every(p => p.finished);
+        const timeExpired = room.startTime && room.timeLimit && (Date.now() >= room.startTime + (room.timeLimit * 1000));
+        if (allFinished || timeExpired) {
+            room.status = "ENDED";
             await saveRoomState(roomId, room);
         }
     }
@@ -178,6 +189,15 @@ module.exports = async function handler(req, res) {
             room.timeLimit = timeLimit;
             if (!room.startTime) room.startTime = Date.now();
 
+            // Ensure player finisher stats are clean if start triggered without countdown
+            if (room.players && !room.countdownStart) {
+                Object.values(room.players).forEach(p => {
+                    p.finished = false;
+                    p.finishTimeSeconds = null;
+                    p.finishTimeFormatted = null;
+                });
+            }
+
             await saveRoomState(roomId, room);
             return res.status(200).json({ success: true, room });
         }
@@ -188,6 +208,13 @@ module.exports = async function handler(req, res) {
                 room.players[playerId].finished = true;
                 room.players[playerId].finishTimeSeconds = body.seconds;
                 room.players[playerId].finishTimeFormatted = body.formatted;
+
+                // Auto-end the game when all players have finished playing
+                const playerList = Object.values(room.players);
+                if (room.status === "STARTED" && playerList.length > 0 && playerList.every(p => p.finished)) {
+                    room.status = "ENDED";
+                }
+
                 await saveRoomState(roomId, room);
             }
             return res.status(200).json({ success: true, room });

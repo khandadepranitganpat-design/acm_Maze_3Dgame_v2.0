@@ -211,6 +211,7 @@ class PlayerController {
                 this.hideCountdownOverlay();
                 this.gameStarted = false;
                 this.gameFinished = false;
+                this.finishTimestamp = null;
                 if (this.timerCountdownInterval) clearInterval(this.timerCountdownInterval);
 
                 // If player has joined, keep them in the waiting room!
@@ -227,6 +228,7 @@ class PlayerController {
         if (this.gameStarted) return;
         this.gameStarted = true;
         this.gameFinished = false;
+        this.finishTimestamp = null;
         this.timeLimitSeconds = timeLimit || 120;
         this.remainingSeconds = this.timeLimitSeconds;
 
@@ -294,6 +296,7 @@ class PlayerController {
     onPlayerCompletedSpell(stats) {
         if (this.gameFinished) return;
         this.gameFinished = true;
+        this.finishTimestamp = Date.now();
         if (this.timerCountdownInterval) clearInterval(this.timerCountdownInterval);
 
         const timeTaken = stats.seconds;
@@ -322,6 +325,7 @@ class PlayerController {
     handleTimeExpired() {
         if (this.gameFinished) return;
         this.gameFinished = true;
+        this.finishTimestamp = null;
 
         // Player ran out of time without finding all letters
         this.switchScreen("screenFinishedWaiting");
@@ -333,6 +337,27 @@ class PlayerController {
 
     showLeaderboard(state) {
         if (this.timerCountdownInterval) clearInterval(this.timerCountdownInterval);
+
+        // If player completed the spell very recently, give them a brief moment to see
+        // their completion card before automatically transitioning to the podium
+        const now = Date.now();
+        const timeSinceFinish = this.finishTimestamp ? (now - this.finishTimestamp) : 9999;
+        const delay = Math.max(0, 1600 - timeSinceFinish);
+
+        if (delay > 0) {
+            const desc = document.getElementById("finishedDesc");
+            if (desc) {
+                desc.textContent = "🎉 All players have finished! Revealing final rankings...";
+            }
+            setTimeout(() => {
+                this.renderLeaderboard(state);
+            }, delay);
+        } else {
+            this.renderLeaderboard(state);
+        }
+    }
+
+    renderLeaderboard(state) {
         this.switchScreen("screenLeaderboard");
 
         // Calculate and sort rankings

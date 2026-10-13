@@ -109,6 +109,24 @@ while ($true) {
 
             $room = Get-Room $targetRoomId
 
+            # Auto-advance from COUNTDOWN to STARTED
+            $nowMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+            if ($room.status -eq "COUNTDOWN" -and $room.countdownStart -and ($nowMs -ge ($room.countdownStart + 3000))) {
+                $room.status = "STARTED"
+                if (-not $room.startTime) { $room.startTime = $nowMs }
+            }
+
+            # Auto-advance from STARTED to ENDED if all players finished playing
+            if ($room.status -eq "STARTED" -and $room.players.Count -gt 0) {
+                $allFin = $true
+                foreach ($p in $room.players.Values) {
+                    if (-not $p.finished) { $allFin = $false; break }
+                }
+                if ($allFin) {
+                    $room.status = "ENDED"
+                }
+            }
+
             if ($method -eq "POST" -and $body) {
                 try {
                     $jsonBody = ConvertFrom-Json $body
@@ -183,6 +201,17 @@ while ($true) {
                             $room.players[$finPlayerId].finished = $true
                             $room.players[$finPlayerId].finishTimeSeconds = $jsonBody.seconds
                             $room.players[$finPlayerId].finishTimeFormatted = $jsonBody.formatted
+
+                            # Auto-end if all players have completed the maze
+                            if ($room.status -eq "STARTED" -and $room.players.Count -gt 0) {
+                                $allFin = $true
+                                foreach ($p in $room.players.Values) {
+                                    if (-not $p.finished) { $allFin = $false; break }
+                                }
+                                if ($allFin) {
+                                    $room.status = "ENDED"
+                                }
+                            }
                         }
                     }
 
