@@ -600,7 +600,11 @@
         });
 
         // 3-Second Kahoot Countdown on Host Screen
+        let isHostCountingDown = false;
         function showHostCountdown() {
+            if (isHostCountingDown) return; // Prevent repeated reset while countdown is actively ticking
+            isHostCountingDown = true;
+
             const overlay = document.getElementById("hostCountdownOverlay");
             const numEl = document.getElementById("hostCountdownNumber");
             if (!overlay || !numEl) return;
@@ -609,6 +613,9 @@
             overlay.classList.add("active");
             let count = 3;
             numEl.textContent = count;
+            numEl.style.animation = 'none';
+            void numEl.offsetWidth;
+            numEl.style.animation = 'zoomPulse 1s ease-in-out infinite';
             sound.playCountdownBeep(false);
 
             if (hostCountdownInterval) clearInterval(hostCountdownInterval);
@@ -616,19 +623,30 @@
                 count--;
                 if (count > 0) {
                     numEl.textContent = count;
+                    numEl.style.animation = 'none';
+                    void numEl.offsetWidth;
+                    numEl.style.animation = 'zoomPulse 1s ease-in-out infinite';
                     sound.playCountdownBeep(false);
                 } else if (count === 0) {
                     numEl.textContent = "GO!";
+                    numEl.style.animation = 'none';
+                    void numEl.offsetWidth;
+                    numEl.style.animation = 'zoomPulse 1s ease-in-out infinite';
                     sound.playCountdownBeep(true);
                 } else {
                     clearInterval(hostCountdownInterval);
+                    hostCountdownInterval = null;
                     overlay.classList.remove("active");
                 }
             }, 1000);
         }
 
         function hideHostCountdown() {
-            if (hostCountdownInterval) clearInterval(hostCountdownInterval);
+            isHostCountingDown = false;
+            if (hostCountdownInterval) {
+                clearInterval(hostCountdownInterval);
+                hostCountdownInterval = null;
+            }
             const overlay = document.getElementById("hostCountdownOverlay");
             if (overlay) overlay.classList.remove("active");
         }

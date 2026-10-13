@@ -114,6 +114,9 @@ class PlayerController {
     }
 
     showCountdownOverlay() {
+        if (this.isCountingDown) return; // Prevent repeated reset while countdown is actively ticking
+        this.isCountingDown = true;
+
         const overlay = document.getElementById("countdownOverlay");
         const numEl = document.getElementById("countdownNumber");
         const subEl = document.getElementById("countdownSubtitle");
@@ -122,6 +125,7 @@ class PlayerController {
         overlay.classList.add("active");
         let count = 3;
         numEl.textContent = count;
+        numEl.style.color = "#38bdf8";
         if (subEl) subEl.textContent = "GET READY!";
 
         if (window.gameInstance && window.gameInstance.sound) {
@@ -134,24 +138,38 @@ class PlayerController {
             count--;
             if (count > 0) {
                 numEl.textContent = count;
+                numEl.style.animation = 'none';
+                void numEl.offsetWidth;
+                numEl.style.animation = 'zoomPulse 1s ease-in-out infinite';
+
                 if (window.gameInstance && window.gameInstance.sound) {
                     window.gameInstance.sound.playCountdownBeep(false);
                 }
             } else if (count === 0) {
                 numEl.textContent = "GO!";
+                numEl.style.color = "#00f5d4";
+                numEl.style.animation = 'none';
+                void numEl.offsetWidth;
+                numEl.style.animation = 'zoomPulse 1s ease-in-out infinite';
+
                 if (subEl) subEl.textContent = "FIND LETTERS A, C, M!";
                 if (window.gameInstance && window.gameInstance.sound) {
                     window.gameInstance.sound.playCountdownBeep(true);
                 }
             } else {
                 clearInterval(this.countdownTimerInterval);
+                this.countdownTimerInterval = null;
                 overlay.classList.remove("active");
             }
         }, 1000);
     }
 
     hideCountdownOverlay() {
-        if (this.countdownTimerInterval) clearInterval(this.countdownTimerInterval);
+        this.isCountingDown = false;
+        if (this.countdownTimerInterval) {
+            clearInterval(this.countdownTimerInterval);
+            this.countdownTimerInterval = null;
+        }
         const overlay = document.getElementById("countdownOverlay");
         if (overlay) overlay.classList.remove("active");
     }
