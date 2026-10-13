@@ -27,11 +27,20 @@ function getDefaultRoom(id) {
     };
 }
 
+let redisConsecutiveErrors = 0;
+let redisLastTry = 0;
+
 async function redisCommand(commandArray) {
     if (!REDIS_URL || !REDIS_TOKEN) return null;
+    // If Redis failed recently, use local memory cache directly to ensure sub-millisecond local responses
+    if (redisConsecutiveErrors >= 3 && Date.now() - redisLastTry < 15000) {
+        return null;
+    }
+    redisLastTry = Date.now();
+
     try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 2500);
+        const timeoutId = setTimeout(() => controller.abort(), 1200);
 
         const response = await fetch(REDIS_URL, {
             method: "POST",
@@ -46,11 +55,14 @@ async function redisCommand(commandArray) {
 
         if (response.ok) {
             const data = await response.json();
+            redisConsecutiveErrors = 0;
             return data.result;
         }
     } catch (e) {
-        // Fallback to local memory gracefully if Redis is momentarily unreachable
-        console.warn("Redis fetch error:", e.message);
+        redisConsecutiveErrors++;
+        if (redisConsecutiveErrors <= 2) {
+            console.warn("Redis offline or unreachable, using local memory store:", e.message);
+        }
     }
     return null;
 }
