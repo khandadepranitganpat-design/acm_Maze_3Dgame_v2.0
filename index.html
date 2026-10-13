@@ -32,6 +32,7 @@
                     autofocus
                 >
                 <button id="btnJoinLobby" class="kahoot-btn">Join Game</button>
+                <button id="btnJoinViewLeaderboard" class="kahoot-btn" style="background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.35); color: #38bdf8; margin-top: 10px;">🏆 View Leaderboard</button>
             </div>
 
             <div class="kahoot-shapes">
@@ -96,6 +97,7 @@
                     </div>
                 </div>
                 <div class="controls-actions">
+                    <button id="btnViewLeaderboard" class="btn-action">🏆 Leaderboard</button>
                     <button id="soundToggleBtn" class="btn-action">🔊 Audio: On</button>
                     <button id="restartBtn" class="btn-action">🔄 Refresh</button>
                 </div>
@@ -230,6 +232,8 @@
                     Round ends automatically once all players are done playing!
                 </span>
             </p>
+
+            <button id="btnFinishedViewLeaderboard" class="kahoot-btn" style="max-width: 260px; margin: 14px auto 0; background: rgba(56, 189, 248, 0.16); border: 1px solid #38bdf8; color: #bae6fd; display: inline-block;">🏆 View Leaderboard</button>
         </div>
     </div>
 
@@ -282,6 +286,10 @@
                     <!-- Populated dynamically -->
                 </tbody>
             </table>
+
+            <div style="text-align: center; margin-top: 22px;">
+                <button id="btnBackToGame" class="kahoot-btn" style="max-width: 260px; margin: 0 auto; display: inline-block;">⬅️ Back to Game</button>
+            </div>
         </div>
     </div>
 

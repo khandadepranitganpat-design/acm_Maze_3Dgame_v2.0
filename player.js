@@ -68,8 +68,8 @@ class PlayerController {
                     sessionStorage.setItem(`acm_player_${this.roomId}`, JSON.stringify(this.currentPlayer));
                 } catch (e) {}
 
-                // Immediately transition to waiting room (Ready)
-                this.showLobbyWaiting();
+                // Directly transition into active gameplay view / maze interface
+                this.launchGame(this.cachedTimeLimit || 120, this.cachedStartTime || Date.now());
             } catch (err) {
                 console.error("Join error:", err);
                 this.showError("Network error joining lobby. Please try again.");
@@ -83,6 +83,44 @@ class PlayerController {
         if (nameInput) {
             nameInput.addEventListener("keydown", (e) => {
                 if (e.key === "Enter") submitJoin();
+            });
+        }
+
+        // Leaderboard Navigation Buttons
+        const joinLeaderboardBtn = document.getElementById("btnJoinViewLeaderboard");
+        if (joinLeaderboardBtn) {
+            joinLeaderboardBtn.addEventListener("click", () => {
+                this.switchScreen("screenLeaderboard");
+                this.renderLeaderboard(this.sync.lastState || {});
+            });
+        }
+
+        const viewLeaderboardBtn = document.getElementById("btnViewLeaderboard");
+        if (viewLeaderboardBtn) {
+            viewLeaderboardBtn.addEventListener("click", () => {
+                this.switchScreen("screenLeaderboard");
+                this.renderLeaderboard(this.sync.lastState || {});
+            });
+        }
+
+        const backToGameBtn = document.getElementById("btnBackToGame");
+        if (backToGameBtn) {
+            backToGameBtn.addEventListener("click", () => {
+                if (this.gameStarted) {
+                    this.switchScreen("screenGame");
+                    if (window.gameInstance) window.gameInstance.resizeCanvas();
+                } else if (this.currentPlayer) {
+                    this.launchGame(this.cachedTimeLimit || 120, this.cachedStartTime || Date.now());
+                } else {
+                    this.switchScreen("screenJoin");
+                }
+            });
+        }
+
+        const finishedLeaderboardBtn = document.getElementById("btnFinishedViewLeaderboard");
+        if (finishedLeaderboardBtn) {
+            finishedLeaderboardBtn.addEventListener("click", () => {
+                this.showLeaderboard(this.sync.lastState || {});
             });
         }
     }
@@ -204,21 +242,18 @@ class PlayerController {
                 }
             } else if (state.status === "ENDED") {
                 this.hideCountdownOverlay();
-                if (this.currentPlayer) {
+                // Restrict leaderboard display to game-over events (e.g., when the player wins by collecting all letters)
+                if (this.currentPlayer && this.gameFinished) {
                     this.showLeaderboard(state);
                 }
             } else if (state.status === "LOBBY") {
                 this.hideCountdownOverlay();
-                this.gameStarted = false;
-                this.gameFinished = false;
-                this.finishTimestamp = null;
-                if (this.timerCountdownInterval) clearInterval(this.timerCountdownInterval);
-
-                // If player has joined, keep them in the waiting room!
-                if (this.currentPlayer) {
-                    this.showLobbyWaiting();
-                } else {
-                    this.switchScreen("screenJoin");
+                if (!this.gameStarted) {
+                    if (this.currentPlayer) {
+                        this.launchGame();
+                    } else {
+                        this.switchScreen("screenJoin");
+                    }
                 }
             }
         });
@@ -320,6 +355,11 @@ class PlayerController {
         if (finishOrderDisplay) finishOrderDisplay.textContent = stats.sequence.join(' ➔ ');
 
         this.switchScreen("screenFinishedWaiting");
+
+        // Victory event: automatically reveal leaderboard rankings after brief celebratory card
+        setTimeout(() => {
+            this.showLeaderboard(this.sync.lastState || {});
+        }, 2500);
     }
 
     handleTimeExpired() {
@@ -327,12 +367,16 @@ class PlayerController {
         this.gameFinished = true;
         this.finishTimestamp = null;
 
-        // Player ran out of time without finding all letters
+        // Player ran out of time without finding all letters (Game over event)
         this.switchScreen("screenFinishedWaiting");
         const title = document.getElementById("finishedTitle");
         const desc = document.getElementById("finishedDesc");
         if (title) title.textContent = "⏰ TIME'S UP!";
         if (desc) desc.textContent = "Round has concluded. Calculating final leaderboard rankings...";
+
+        setTimeout(() => {
+            this.showLeaderboard(this.sync.lastState || {});
+        }, 2000);
     }
 
     showLeaderboard(state) {

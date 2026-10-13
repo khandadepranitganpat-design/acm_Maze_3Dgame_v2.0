@@ -2,28 +2,30 @@
  * ACM Spell Maze - 3D Follow-Camera Engine (v2)
  * Inspired by the perspective & camera mechanics of Hunter Assassin.
  * Features:
- * - Low-poly 3D dungeon labyrinth with modeled stone walls & flagstone floors
+ * - Open labyrinth with thin low-poly walls and wide 2-3 tile corridors
  * - Slanted top-down / isometric follow-camera locked smoothly to the player
- * - Localized phone viewport with distant corridors shrouded in darkness and fog
- * - Dynamic line-of-sight shadows cast in real-time by player torch & vision spotlight
+ * - Localized phone viewport with distant corridors shrouded in gentle atmospheric fog
+ * - Dynamic line-of-sight shadows cast by player torch & forward tactical spotlight
+ * - Forward-locked flashlight beam and volumetric cone illuminating the direction of travel
  * - Stylized 3D operative character avatar with walking sway & rotation physics
+ * - Strict, airtight rigid-body bounding-box collision detection with compact hitbox
  * - 3D floating, rotating, glowing collectibles for letters A, C, and N
- * - Smooth mobile virtual floating joystick, D-Pad, touch-to-move, and WASD/Arrow keys
- * - Clean wall-collision sliding physics and minimal HUD (A: [ ], C: [ ], N: [ ])
+ * - Virtual floating joystick, D-Pad, touch-to-move, and WASD/Arrow keys
  */
 
-const CELL_SIZE = 2.4;
-const WALL_HEIGHT = 2.6;
-const HALF_CELL = CELL_SIZE * 0.5;
-const PLAYER_COLLISION_RADIUS = 0.58;
+const CELL_SIZE = 2.6;                 // Width/depth of a corridor cell (ample breathing room)
+const WALL_THICKNESS = 0.28;           // Significantly thinner walls to keep corridors open
+const WALL_HEIGHT = 1.35;              // Low-poly wall height calibrated so player is never suffocated
+const PLAYER_COLLISION_RADIUS = 0.22;  // Compact collision capsule smaller than visible mesh (responsive turns)
+const PLAYER_SPEED = 5.2;
 
 class Game {
     constructor() {
         this.canvas = document.getElementById('gameCanvas');
         this.sound = new SoundManager();
 
-        // Maze settings (25x25 medium difficulty)
-        this.mazeSize = 25;
+        // Maze settings (16x16 labyrinth)
+        this.mazeSize = 16;
         this.maze = new Maze(this.mazeSize, this.mazeSize);
 
         // Game stats
@@ -35,16 +37,19 @@ class Game {
         this.collectedSequence = [];
 
         // Player physics & transform
+        const startWorldX = (this.maze.startPos.x + 0.5) * CELL_SIZE;
+        const startWorldZ = (this.maze.startPos.y + 0.5) * CELL_SIZE;
+
         this.player = {
             gridX: this.maze.startPos.x,
             gridY: this.maze.startPos.y,
-            x: this.maze.startPos.x * CELL_SIZE,
-            z: this.maze.startPos.y * CELL_SIZE,
+            x: startWorldX,
+            z: startWorldZ,
             vx: 0,
             vz: 0,
             angle: 0,
             targetAngle: 0,
-            speed: 5.4,
+            speed: PLAYER_SPEED,
             walkCycle: 0,
             isMoving: false
         };
@@ -61,8 +66,8 @@ class Game {
         this.renderer = null;
 
         // Scene meshes
-        this.wallsGroup = null;
-        this.floorMesh = null;
+        this.mazeMeshes = [];
+        this.wallColliders = [];
         this.playerGroup = null;
         this.playerLegL = null;
         this.playerLegR = null;
@@ -73,8 +78,8 @@ class Game {
         this.wisps = [];
 
         // Letter collectibles
-        this.letterGroups = []; // [ { id, group, mesh, light, collected, baseY } ]
-        this.particles = [];    // 3D collection burst & ambient particles
+        this.letterGroups = [];
+        this.particles = [];
 
         // Controls
         this.keys = {};
@@ -115,21 +120,21 @@ class Game {
     }
 
     /* -----------------------------------------------------
-       1. THREE.JS SCENE, CAMERA & LIGHTING
+       1. THREE.JS SCENE, CAMERA & BALANCED LIGHTING
        ----------------------------------------------------- */
     initThree() {
-        // Scene with gentle atmospheric dungeon fog (softer so maze corridors are visible)
+        // Scene with gentle atmospheric dungeon fog
         this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(0x080e1d);
-        this.scene.fog = new THREE.FogExp2(0x080e1d, 0.038);
+        this.scene.background = new THREE.Color(0x0c1322);
+        this.scene.fog = new THREE.FogExp2(0x0c1322, 0.024);
 
         // Localized Follow-Camera (Slanted Top-Down / Isometric perspective)
         const aspect = this.canvas.clientWidth / (this.canvas.clientHeight || 1);
-        this.camera = new THREE.PerspectiveCamera(46, aspect, 0.2, 80);
-        this.camera.position.set(this.player.x, 14.5, this.player.z + 8.2);
-        this.camera.lookAt(this.player.x, 0.5, this.player.z);
+        this.camera = new THREE.PerspectiveCamera(46, aspect, 0.2, 90);
+        this.camera.position.set(this.player.x, 14.2, this.player.z + 7.8);
+        this.camera.lookAt(this.player.x, 0.45, this.player.z);
 
-        // WebGL Renderer with soft shadows
+        // WebGL Renderer with soft shadows & balanced exposure
         this.renderer = new THREE.WebGLRenderer({
             canvas: this.canvas,
             antialias: true,
@@ -140,19 +145,20 @@ class Game {
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        this.renderer.toneMappingExposure = 1.35;
+        this.renderer.toneMappingExposure = 1.05; // Balanced: avoids blowout & pitch-black darkness
 
-        // Ambient Light (Rich midnight blue fill so the maze corridors are clearly discernable)
-        const ambient = new THREE.AmbientLight(0x24365a, 0.72);
+        // Rebalanced Atmosphere:
+        // 1. Ambient Light (Even slate-blue base fill so maze geometry is clearly legible)
+        const ambient = new THREE.AmbientLight(0x2d3e5e, 0.52);
         this.scene.add(ambient);
 
-        // Soft Hemisphere Light (Sky cool cyan, ground warm dark stone)
-        const hemiLight = new THREE.HemisphereLight(0x38bdf8, 0x0f172a, 0.48);
+        // 2. Soft Hemisphere Light (Cool cyan sky, warm dark stone floor)
+        const hemiLight = new THREE.HemisphereLight(0x4ba3e3, 0x111c2e, 0.38);
         this.scene.add(hemiLight);
 
-        // Top Directional Light (Highlights wall bevels and flagstone borders)
-        const moonLight = new THREE.DirectionalLight(0x60a5fa, 0.68);
-        moonLight.position.set(25, 45, 18);
+        // 3. Directional Moonlit Fill (Gentle top-down bevel highlights)
+        const moonLight = new THREE.DirectionalLight(0x6ba4d9, 0.42);
+        moonLight.position.set(22, 38, 16);
         this.scene.add(moonLight);
 
         this.resizeCanvas();
@@ -173,235 +179,302 @@ class Game {
     }
 
     /* -----------------------------------------------------
-       2. 3D DUNGEON MAZE BUILDER (WALLS & FLOOR)
+       2. 3D DUNGEON MAZE BUILDER (THIN WALLS & 2-3 TILE FLOORS)
        ----------------------------------------------------- */
     buildDungeonMaze() {
-        // Floor Plane
+        // Clear previous meshes
+        this.mazeMeshes.forEach(m => this.scene.remove(m));
+        this.mazeMeshes = [];
+
         const mazeWidth = this.maze.cols * CELL_SIZE;
-        const mazeDepth = this.maze.rows * CELL_SIZE;
+        const mazeHeight = this.maze.rows * CELL_SIZE;
 
-        const floorGeo = new THREE.PlaneGeometry(mazeWidth + 30, mazeDepth + 30, 32, 32);
-        const floorMat = new THREE.MeshStandardMaterial({
-            color: 0x0a0f1d,
-            roughness: 0.85,
-            metalness: 0.15
+        // 1. Base Ground Plane
+        const groundGeo = new THREE.PlaneGeometry(mazeWidth + 30, mazeHeight + 30, 8, 8);
+        const groundMat = new THREE.MeshStandardMaterial({
+            color: 0x090f1a,
+            roughness: 0.9,
+            metalness: 0.1
         });
-        this.floorMesh = new THREE.Mesh(floorGeo, floorMat);
-        this.floorMesh.rotation.x = -Math.PI / 2;
-        this.floorMesh.position.set(mazeWidth / 2 - HALF_CELL, -0.01, mazeDepth / 2 - HALF_CELL);
-        this.floorMesh.receiveShadow = true;
-        this.scene.add(this.floorMesh);
+        const groundMesh = new THREE.Mesh(groundGeo, groundMat);
+        groundMesh.rotation.x = -Math.PI / 2;
+        groundMesh.position.set(mazeWidth * 0.5, -0.02, mazeHeight * 0.5);
+        groundMesh.receiveShadow = true;
+        this.scene.add(groundMesh);
+        this.mazeMeshes.push(groundMesh);
 
-        // Floor Flagstone Tile Accents (Low-poly corridor floor tiles with clear path contrast)
-        const tileGeo = new THREE.BoxGeometry(CELL_SIZE - 0.08, 0.04, CELL_SIZE - 0.08);
-        const pathTileMat = new THREE.MeshStandardMaterial({
-            color: 0x16233b,
-            roughness: 0.62,
-            metalness: 0.24,
-            emissive: 0x0a1020,
-            emissiveIntensity: 0.22
+        // 2. Floor Flagstone Tiles (2x2 grid per corridor cell = 2-3 tiles wide)
+        // Gives clear visible stone tile seams and provides generous maneuvering space
+        const tilesPerCell = 2;
+        const tileMargin = 0.04;
+        const tileSize = (CELL_SIZE / tilesPerCell) - tileMargin;
+        const totalTiles = this.maze.cols * this.maze.rows * tilesPerCell * tilesPerCell;
+
+        const tileGeo = new THREE.BoxGeometry(tileSize, 0.04, tileSize);
+        const tileMat = new THREE.MeshStandardMaterial({
+            color: 0x19263e,
+            roughness: 0.68,
+            metalness: 0.22,
+            emissive: 0x0c1524,
+            emissiveIntensity: 0.14
         });
-
-        // Walls Group (Optimized InstancedMesh with spectral bevel emission for readable layout)
-        let wallCount = 0;
-        for (let r = 0; r < this.maze.rows; r++) {
-            for (let c = 0; c < this.maze.cols; c++) {
-                if (this.maze.grid[r][c] === 1) wallCount++;
-            }
-        }
-
-        const wallGeo = new THREE.BoxGeometry(CELL_SIZE, WALL_HEIGHT, CELL_SIZE);
-        const wallMat = new THREE.MeshStandardMaterial({
-            color: 0x243452,
-            roughness: 0.55,
-            metalness: 0.28,
-            emissive: 0x0f1729,
-            emissiveIntensity: 0.38
-        });
-
-        const wallInstanced = new THREE.InstancedMesh(wallGeo, wallMat, wallCount);
-        wallInstanced.castShadow = true;
-        wallInstanced.receiveShadow = true;
+        const tileInstanced = new THREE.InstancedMesh(tileGeo, tileMat, totalTiles);
+        tileInstanced.receiveShadow = true;
 
         const dummy = new THREE.Object3D();
-        let idx = 0;
+        let tileIdx = 0;
 
         for (let r = 0; r < this.maze.rows; r++) {
             for (let c = 0; c < this.maze.cols; c++) {
-                const wx = c * CELL_SIZE;
-                const wz = r * CELL_SIZE;
+                const cellX = c * CELL_SIZE;
+                const cellZ = r * CELL_SIZE;
 
-                if (this.maze.grid[r][c] === 1) {
-                    dummy.position.set(wx, WALL_HEIGHT * 0.5, wz);
-                    dummy.rotation.set(0, 0, 0);
-                    dummy.scale.set(1, 1, 1);
-                    dummy.updateMatrix();
-                    wallInstanced.setMatrixAt(idx++, dummy.matrix);
-                } else {
-                    // Walkable corridor flagstone slab
-                    const tile = new THREE.Mesh(tileGeo, pathTileMat);
-                    tile.position.set(wx, 0.01, wz);
-                    tile.receiveShadow = true;
-                    this.scene.add(tile);
+                for (let ty = 0; ty < tilesPerCell; ty++) {
+                    for (let tx = 0; tx < tilesPerCell; tx++) {
+                        const px = cellX + (tx + 0.5) * (CELL_SIZE / tilesPerCell);
+                        const pz = cellZ + (ty + 0.5) * (CELL_SIZE / tilesPerCell);
+
+                        dummy.position.set(px, 0.01, pz);
+                        dummy.rotation.set(0, 0, 0);
+                        dummy.scale.set(1, 1, 1);
+                        dummy.updateMatrix();
+                        tileInstanced.setMatrixAt(tileIdx++, dummy.matrix);
+                    }
                 }
             }
         }
+        tileInstanced.instanceMatrix.needsUpdate = true;
+        this.scene.add(tileInstanced);
+        this.mazeMeshes.push(tileInstanced);
 
-        wallInstanced.instanceMatrix.needsUpdate = true;
-        this.scene.add(wallInstanced);
-        this.wallsGroup = wallInstanced;
+        // 3. Thin Walls Architecture & Rigid Colliders
+        this.wallColliders = this.maze.getWallColliders(CELL_SIZE, WALL_THICKNESS);
+
+        // Wall material: Matte slate with subtle edge emission
+        const wallMat = new THREE.MeshStandardMaterial({
+            color: 0x2b3a55,
+            roughness: 0.65,
+            metalness: 0.2,
+            emissive: 0x111c2e,
+            emissiveIntensity: 0.18
+        });
+
+        // Instantiate wall segments:
+        // A. Horizontal walls (h-wall & outer N/S)
+        const hColliders = this.wallColliders.filter(w => w.type === 'h-wall' || (w.type === 'outer' && (w.maxZ - w.minZ) < (w.maxX - w.minX)));
+        // B. Vertical walls (v-wall & outer W/E)
+        const vColliders = this.wallColliders.filter(w => w.type === 'v-wall' || (w.type === 'outer' && (w.maxX - w.minX) <= (w.maxZ - w.minZ)));
+        // C. Corner posts
+        const cornerColliders = this.wallColliders.filter(w => w.type === 'corner');
+
+        // Build Horizontal Wall Meshes
+        if (hColliders.length > 0) {
+            hColliders.forEach(w => {
+                const wWidth = w.maxX - w.minX;
+                const wDepth = w.maxZ - w.minZ;
+                const geo = new THREE.BoxGeometry(wWidth, WALL_HEIGHT, wDepth);
+                const mesh = new THREE.Mesh(geo, wallMat);
+                mesh.position.set((w.minX + w.maxX) * 0.5, WALL_HEIGHT * 0.5, (w.minZ + w.maxZ) * 0.5);
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+                this.scene.add(mesh);
+                this.mazeMeshes.push(mesh);
+            });
+        }
+
+        // Build Vertical Wall Meshes
+        if (vColliders.length > 0) {
+            vColliders.forEach(w => {
+                const wWidth = w.maxX - w.minX;
+                const wDepth = w.maxZ - w.minZ;
+                const geo = new THREE.BoxGeometry(wWidth, WALL_HEIGHT, wDepth);
+                const mesh = new THREE.Mesh(geo, wallMat);
+                mesh.position.set((w.minX + w.maxX) * 0.5, WALL_HEIGHT * 0.5, (w.minZ + w.maxZ) * 0.5);
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+                this.scene.add(mesh);
+                this.mazeMeshes.push(mesh);
+            });
+        }
+
+        // Build Corner Junction Posts
+        if (cornerColliders.length > 0) {
+            const cornerGeo = new THREE.BoxGeometry(WALL_THICKNESS, WALL_HEIGHT, WALL_THICKNESS);
+            const cornerInstanced = new THREE.InstancedMesh(cornerGeo, wallMat, cornerColliders.length);
+            cornerInstanced.castShadow = true;
+            cornerInstanced.receiveShadow = true;
+
+            cornerColliders.forEach((w, i) => {
+                dummy.position.set((w.minX + w.maxX) * 0.5, WALL_HEIGHT * 0.5, (w.minZ + w.maxZ) * 0.5);
+                dummy.rotation.set(0, 0, 0);
+                dummy.scale.set(1, 1, 1);
+                dummy.updateMatrix();
+                cornerInstanced.setMatrixAt(i, dummy.matrix);
+            });
+            cornerInstanced.instanceMatrix.needsUpdate = true;
+            this.scene.add(cornerInstanced);
+            this.mazeMeshes.push(cornerInstanced);
+        }
     }
 
     /* -----------------------------------------------------
-       3. STYLIZED 3D CHARACTER AVATAR (PLAYER)
+       3. STYLIZED 3D CHARACTER AVATAR WITH FORWARD-LOCKED TORCH
        ----------------------------------------------------- */
     buildPlayerAvatar() {
+        if (this.playerGroup) this.scene.remove(this.playerGroup);
+
         this.playerGroup = new THREE.Group();
         this.playerGroup.position.set(this.player.x, 0, this.player.z);
 
-        // Soft Circular Shadow Beneath Player
-        const shadowGeo = new THREE.CircleGeometry(0.55, 18);
+        // Ground Contact Shadow
+        const shadowGeo = new THREE.CircleGeometry(0.48, 16);
         const shadowMat = new THREE.MeshBasicMaterial({
             color: 0x000000,
             transparent: true,
-            opacity: 0.52
+            opacity: 0.45
         });
         const shadowMesh = new THREE.Mesh(shadowGeo, shadowMat);
         shadowMesh.rotation.x = -Math.PI / 2;
         shadowMesh.position.y = 0.02;
         this.playerGroup.add(shadowMesh);
 
-        // Dual Walking Boots
+        // Walking Boots (Local Z: Front is +Z)
         const bootMat = new THREE.MeshStandardMaterial({ color: 0x090d16, roughness: 0.6 });
-        const bootGeo = new THREE.BoxGeometry(0.18, 0.36, 0.28);
+        const bootGeo = new THREE.BoxGeometry(0.16, 0.32, 0.26);
 
         this.playerLegL = new THREE.Mesh(bootGeo, bootMat);
-        this.playerLegL.position.set(-0.16, 0.18, 0);
+        this.playerLegL.position.set(-0.15, 0.16, 0);
         this.playerLegL.castShadow = true;
         this.playerGroup.add(this.playerLegL);
 
         this.playerLegR = new THREE.Mesh(bootGeo, bootMat);
-        this.playerLegR.position.set(0.16, 0.18, 0);
+        this.playerLegR.position.set(0.15, 0.16, 0);
         this.playerLegR.castShadow = true;
         this.playerGroup.add(this.playerLegR);
 
-        // Stealth Operative Torso / Armor
+        // Stealth Operative Torso
         const torsoMat = new THREE.MeshStandardMaterial({
             color: 0x1e293b,
             roughness: 0.45,
             metalness: 0.3
         });
-        const torsoGeo = new THREE.BoxGeometry(0.58, 0.65, 0.38);
+        const torsoGeo = new THREE.BoxGeometry(0.52, 0.58, 0.34);
         const torsoMesh = new THREE.Mesh(torsoGeo, torsoMat);
-        torsoMesh.position.y = 0.62;
+        torsoMesh.position.y = 0.58;
         torsoMesh.castShadow = true;
-        torsoMesh.receiveShadow = true;
         this.playerGroup.add(torsoMesh);
 
-        // Glowing Cyan Core Trim on Chest
-        const coreGeo = new THREE.BoxGeometry(0.18, 0.18, 0.06);
+        // Glowing Cyan Core Trim on Chest (+Z is Forward)
+        const coreGeo = new THREE.BoxGeometry(0.16, 0.16, 0.06);
         const coreMat = new THREE.MeshStandardMaterial({
             color: 0x38bdf8,
             emissive: 0x38bdf8,
             emissiveIntensity: 1.2
         });
         const coreMesh = new THREE.Mesh(coreGeo, coreMat);
-        coreMesh.position.set(0, 0.66, 0.2);
+        coreMesh.position.set(0, 0.62, 0.18);
         this.playerGroup.add(coreMesh);
 
-        // Operative Head / Mask with Illuminated Neon Visor
-        const headGeo = new THREE.BoxGeometry(0.42, 0.4, 0.42);
+        // Operative Head / Mask
+        const headGeo = new THREE.BoxGeometry(0.38, 0.36, 0.38);
         const headMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.4 });
         const headMesh = new THREE.Mesh(headGeo, headMat);
-        headMesh.position.y = 1.1;
+        headMesh.position.y = 1.02;
         headMesh.castShadow = true;
         this.playerGroup.add(headMesh);
 
-        // Glowing Visor
-        const visorGeo = new THREE.BoxGeometry(0.34, 0.1, 0.08);
+        // Glowing Visor (+Z is Forward)
+        const visorGeo = new THREE.BoxGeometry(0.3, 0.09, 0.08);
         const visorMat = new THREE.MeshStandardMaterial({
             color: 0x00f5d4,
             emissive: 0x00f5d4,
-            emissiveIntensity: 1.8
+            emissiveIntensity: 1.6
         });
         const visorMesh = new THREE.Mesh(visorGeo, visorMat);
-        visorMesh.position.set(0, 1.1, 0.21);
+        visorMesh.position.set(0, 1.02, 0.19);
         this.playerGroup.add(visorMesh);
 
-        // Handheld Torch / Tactical Lantern
-        const lanternGeo = new THREE.CylinderGeometry(0.08, 0.1, 0.26, 8);
+        // Handheld Torch Lantern (Right hand, pointing forward +Z)
+        const lanternGeo = new THREE.CylinderGeometry(0.07, 0.09, 0.24, 8);
         const lanternMat = new THREE.MeshStandardMaterial({
             color: 0xffb703,
             emissive: 0xffaa00,
             emissiveIntensity: 1.5
         });
         this.playerTorch = new THREE.Mesh(lanternGeo, lanternMat);
-        this.playerTorch.position.set(0.38, 0.65, 0.24);
+        this.playerTorch.position.set(0.34, 0.62, 0.22);
         this.playerGroup.add(this.playerTorch);
 
         // -----------------------------------------------------
-        // DYNAMIC VISION LIGHTING & LINE-OF-SIGHT SHADOWS
+        // DYNAMIC VISION LIGHTING: STRICT FORWARD ALIGNMENT
         // -----------------------------------------------------
-        // 1. High-Intensity Warm Player Torch PointLight
-        this.torchLight = new THREE.PointLight(0xffb732, 5.2, 26, 1.8);
-        this.torchLight.position.set(0.38, 0.95, 0.25);
+        // 1. Warm Torch PointLight (Localized ambient illumination)
+        this.torchLight = new THREE.PointLight(0xffaa2b, 2.4, 16, 1.6);
+        this.torchLight.position.set(0.34, 0.75, 0.26);
         this.torchLight.castShadow = true;
         this.torchLight.shadow.mapSize.width = 1024;
         this.torchLight.shadow.mapSize.height = 1024;
-        this.torchLight.shadow.bias = -0.002;
+        this.torchLight.shadow.bias = -0.0015;
         this.playerGroup.add(this.torchLight);
 
-        // 2. High-Powered Forward Tactical Vision Spotlight (Significantly brighter & farther reaching)
-        this.visionSpotLight = new THREE.SpotLight(0xfff8ee, 8.8, 38, Math.PI / 3.6, 0.55, 1.6);
-        this.visionSpotLight.position.set(0, 1.0, 0.25);
+        // 2. Forward Tactical Vision Spotlight
+        // Positioned at character chest, pointing strictly forward (+Z)
+        this.visionSpotLight = new THREE.SpotLight(0xfffaee, 4.2, 24, Math.PI / 4.2, 0.5, 1.5);
+        this.visionSpotLight.position.set(0, 0.85, 0.25);
         this.visionSpotLight.castShadow = true;
         this.visionSpotLight.shadow.mapSize.width = 1024;
         this.visionSpotLight.shadow.mapSize.height = 1024;
-        this.visionSpotLight.shadow.bias = -0.002;
+        this.visionSpotLight.shadow.bias = -0.0015;
 
+        // Spot target added to scene (updated every frame to match forward direction)
+        if (this.spotTarget) this.scene.remove(this.spotTarget);
         this.spotTarget = new THREE.Object3D();
-        this.spotTarget.position.set(0, 0.5, 12);
-        this.playerGroup.add(this.spotTarget);
+        this.spotTarget.position.set(this.player.x, 0.5, this.player.z + 12);
+        this.scene.add(this.spotTarget);
         this.visionSpotLight.target = this.spotTarget;
         this.playerGroup.add(this.visionSpotLight);
 
-        // 3. Volumetric Flashlight Beam Cone (Translucent glowing beam slicing through corridors)
-        const beamGeo = new THREE.ConeGeometry(3.6, 14, 16, 1, true);
-        beamGeo.translate(0, -7, 0);
-        beamGeo.rotateX(Math.PI / 2);
+        // 3. Volumetric Flashlight Beam Cone
+        // Strictly aligned along +Z (character forward vector)
+        const beamHeight = 11;
+        const beamGeo = new THREE.ConeGeometry(2.2, beamHeight, 16, 1, true);
+        beamGeo.translate(0, -beamHeight * 0.5, 0); // Tip at (0, 0, 0), base at (0, -11, 0)
+        beamGeo.rotateX(-Math.PI / 2);              // Base rotated forward to +Z
+
         const beamMat = new THREE.MeshBasicMaterial({
-            color: 0xfff3d6,
+            color: 0xfff2d4,
             transparent: true,
-            opacity: 0.12,
+            opacity: 0.08,
             blending: THREE.AdditiveBlending,
             depthWrite: false,
             side: THREE.DoubleSide
         });
         const beamMesh = new THREE.Mesh(beamGeo, beamMat);
-        beamMesh.position.set(0, 0.95, 0.25);
+        beamMesh.position.set(0, 0.85, 0.25);
         this.playerGroup.add(beamMesh);
 
-        // 4. Glowing Flashlight Lens Flare Disc
-        const flareGeo = new THREE.CircleGeometry(0.18, 16);
+        // 4. Glowing Lens Flare Disc at Flashlight Lens
+        const flareGeo = new THREE.CircleGeometry(0.15, 16);
         const flareMat = new THREE.MeshBasicMaterial({
             color: 0xffffff,
             transparent: true,
-            opacity: 0.92,
+            opacity: 0.75,
             blending: THREE.AdditiveBlending
         });
         const flareMesh = new THREE.Mesh(flareGeo, flareMat);
-        flareMesh.position.set(0.38, 0.78, 0.38);
+        flareMesh.position.set(0.34, 0.72, 0.35);
         this.playerGroup.add(flareMesh);
 
-        // Orbiting Firefly Wisps
-        for (let i = 0; i < 4; i++) {
+        // Orbiting Wisps
+        this.wisps = [];
+        for (let i = 0; i < 3; i++) {
             const wispGeo = new THREE.SphereGeometry(0.04, 6, 6);
             const wispMat = new THREE.MeshBasicMaterial({ color: i % 2 === 0 ? 0xffb703 : 0x00f5d4 });
             const wisp = new THREE.Mesh(wispGeo, wispMat);
             this.wisps.push({
                 mesh: wisp,
-                angle: (i * Math.PI) / 2,
-                radius: 0.65 + i * 0.1,
+                angle: (i * Math.PI * 2) / 3,
+                radius: 0.6 + i * 0.1,
                 speed: 2.2 * (i % 2 === 0 ? 1 : -1)
             });
             this.playerGroup.add(wisp);
@@ -420,47 +493,47 @@ class Game {
         this.letterGroups = [];
 
         const letterDefs = {
-            'A': { color: 0xffb703, lightColor: 0xffb703, hex: '#ffb703' },
-            'C': { color: 0x00f5d4, lightColor: 0x00f5d4, hex: '#00f5d4' },
-            'N': { color: 0xff006e, lightColor: 0xff006e, hex: '#ff006e' }
+            'A': { color: 0xffb703, lightColor: 0xffb703 },
+            'C': { color: 0x00f5d4, lightColor: 0x00f5d4 },
+            'N': { color: 0xff006e, lightColor: 0xff006e }
         };
 
         this.maze.letters.forEach(letter => {
             const def = letterDefs[letter.id] || letterDefs['A'];
             const group = new THREE.Group();
-            const wx = letter.x * CELL_SIZE;
-            const wz = letter.y * CELL_SIZE;
+            const wx = (letter.x + 0.5) * CELL_SIZE;
+            const wz = (letter.y + 0.5) * CELL_SIZE;
             group.position.set(wx, 0, wz);
 
-            // 1. Runic Stone Floor Medallion
-            const ringGeo = new THREE.RingGeometry(0.55, 0.78, 24);
+            // Floor Medallion Ring
+            const ringGeo = new THREE.RingGeometry(0.48, 0.72, 24);
             const ringMat = new THREE.MeshBasicMaterial({
                 color: def.color,
                 side: THREE.DoubleSide,
                 transparent: true,
-                opacity: 0.6
+                opacity: 0.55
             });
             const ringMesh = new THREE.Mesh(ringGeo, ringMat);
             ringMesh.rotation.x = -Math.PI / 2;
             ringMesh.position.y = 0.03;
             group.add(ringMesh);
 
-            // 2. Procedural 3D Extruded Letter Mesh
+            // Procedural Extruded 3D Letter
             const letterGeo = this.create3DLetterGeometry(letter.id);
             const letterMat = new THREE.MeshStandardMaterial({
                 color: def.color,
                 emissive: def.color,
                 emissiveIntensity: 0.65,
                 roughness: 0.25,
-                metalness: 0.6
+                metalness: 0.5
             });
             const letterMesh = new THREE.Mesh(letterGeo, letterMat);
             letterMesh.castShadow = true;
             group.add(letterMesh);
 
-            // 3. Local Glowing PointLight for Rune
-            const light = new THREE.PointLight(def.lightColor, 2.0, 7.5, 2);
-            light.position.set(0, 1.0, 0);
+            // Local Glowing PointLight
+            const light = new THREE.PointLight(def.lightColor, 1.8, 6.5, 2);
+            light.position.set(0, 0.9, 0);
             group.add(light);
 
             this.scene.add(group);
@@ -469,12 +542,14 @@ class Game {
                 id: letter.id,
                 gridX: letter.x,
                 gridY: letter.y,
+                worldX: wx,
+                worldZ: wz,
                 group: group,
                 mesh: letterMesh,
                 ring: ringMesh,
                 light: light,
                 collected: letter.collected,
-                baseY: 0.85
+                baseY: 0.8
             });
         });
     }
@@ -482,59 +557,56 @@ class Game {
     create3DLetterGeometry(char) {
         const shape = new THREE.Shape();
         const extrudeSettings = {
-            depth: 0.16,
+            depth: 0.14,
             bevelEnabled: true,
-            bevelThickness: 0.04,
-            bevelSize: 0.03,
+            bevelThickness: 0.03,
+            bevelSize: 0.025,
             bevelSegments: 2
         };
 
         if (char === 'A') {
-            // Letter A outline
-            shape.moveTo(-0.35, -0.45);
-            shape.lineTo(0, 0.45);
-            shape.lineTo(0.35, -0.45);
-            shape.lineTo(0.18, -0.45);
-            shape.lineTo(0.1, -0.15);
-            shape.lineTo(-0.1, -0.15);
-            shape.lineTo(-0.18, -0.45);
+            shape.moveTo(-0.32, -0.42);
+            shape.lineTo(0, 0.42);
+            shape.lineTo(0.32, -0.42);
+            shape.lineTo(0.16, -0.42);
+            shape.lineTo(0.09, -0.14);
+            shape.lineTo(-0.09, -0.14);
+            shape.lineTo(-0.16, -0.42);
             shape.closePath();
 
-            // Inner hole for A
             const hole = new THREE.Path();
-            hole.moveTo(0, 0.25);
-            hole.lineTo(-0.08, -0.02);
-            hole.lineTo(0.08, -0.02);
+            hole.moveTo(0, 0.22);
+            hole.lineTo(-0.07, -0.02);
+            hole.lineTo(0.07, -0.02);
             hole.closePath();
             shape.holes.push(hole);
         } else if (char === 'C') {
-            // Letter C outline
-            shape.moveTo(0.32, 0.32);
-            shape.lineTo(0.35, 0.45);
-            shape.lineTo(-0.35, 0.45);
-            shape.lineTo(-0.35, -0.45);
-            shape.lineTo(0.35, -0.45);
-            shape.lineTo(0.32, -0.32);
-            shape.lineTo(-0.18, -0.32);
-            shape.lineTo(-0.18, 0.32);
+            shape.moveTo(0.3, 0.3);
+            shape.lineTo(0.32, 0.42);
+            shape.lineTo(-0.32, 0.42);
+            shape.lineTo(-0.32, -0.42);
+            shape.lineTo(0.32, -0.42);
+            shape.lineTo(0.3, -0.3);
+            shape.lineTo(-0.16, -0.3);
+            shape.lineTo(-0.16, 0.3);
             shape.closePath();
         } else {
-            // Letter N outline
-            shape.moveTo(-0.34, -0.45);
-            shape.lineTo(-0.34, 0.45);
-            shape.lineTo(-0.14, 0.45);
-            shape.lineTo(0.14, -0.15);
-            shape.lineTo(0.14, 0.45);
-            shape.lineTo(0.34, 0.45);
-            shape.lineTo(0.34, -0.45);
-            shape.lineTo(0.14, -0.45);
-            shape.lineTo(-0.14, 0.15);
-            shape.lineTo(-0.14, -0.45);
+            // N
+            shape.moveTo(-0.32, -0.42);
+            shape.lineTo(-0.32, 0.42);
+            shape.lineTo(-0.14, 0.42);
+            shape.lineTo(0.14, -0.14);
+            shape.lineTo(0.14, 0.42);
+            shape.lineTo(0.32, 0.42);
+            shape.lineTo(0.32, -0.42);
+            shape.lineTo(0.14, -0.42);
+            shape.lineTo(-0.14, 0.14);
+            shape.lineTo(-0.14, -0.42);
             shape.closePath();
         }
 
         const geo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-        geo.center(); // Center geometry for clean rotation
+        geo.center();
         return geo;
     }
 
@@ -542,23 +614,23 @@ class Game {
        5. 3D AMBIENT ATMOSPHERIC MOTES
        ----------------------------------------------------- */
     buildAmbientDust() {
-        const dustCount = 80;
+        const dustCount = 60;
         const dustGeo = new THREE.BufferGeometry();
         const positions = new Float32Array(dustCount * 3);
+        const range = 22;
 
-        const range = 24;
         for (let i = 0; i < dustCount; i++) {
             positions[i * 3] = (Math.random() - 0.5) * range;
-            positions[i * 3 + 1] = Math.random() * 3.5 + 0.2;
+            positions[i * 3 + 1] = Math.random() * 3.0 + 0.2;
             positions[i * 3 + 2] = (Math.random() - 0.5) * range;
         }
 
         dustGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
         const dustMat = new THREE.PointsMaterial({
             color: 0x38bdf8,
-            size: 0.12,
+            size: 0.1,
             transparent: true,
-            opacity: 0.45
+            opacity: 0.35
         });
 
         this.dustPoints = new THREE.Points(dustGeo, dustMat);
@@ -566,10 +638,9 @@ class Game {
     }
 
     /* -----------------------------------------------------
-       6. INPUT BINDINGS (KEYBOARD, VIRTUAL JOYSTICK, D-PAD)
+       6. INPUT BINDINGS
        ----------------------------------------------------- */
     bindInputEvents() {
-        // Keyboard inputs
         window.addEventListener('keydown', (e) => {
             this.sound.init();
             this.keys[e.key.toLowerCase()] = true;
@@ -581,7 +652,6 @@ class Game {
             this.updateInputVector();
         });
 
-        // UI header buttons
         const restartBtn = document.getElementById('restartBtn');
         if (restartBtn) restartBtn.addEventListener('click', () => this.resetGame());
 
@@ -595,10 +665,7 @@ class Game {
             });
         }
 
-        // On-Screen D-Pad buttons
         this.bindDPadButtons();
-
-        // Touch & Virtual Floating Joystick
         this.bindTouchJoystick();
     }
 
@@ -611,7 +678,6 @@ class Game {
         if (this.keys['arrowleft'] || this.keys['a']) ix -= 1;
         if (this.keys['arrowright'] || this.keys['d']) ix += 1;
 
-        // If joystick is active, it takes priority or blends smoothly
         if (this.touchActive) {
             ix = this.inputVector.x;
             iz = this.inputVector.z;
@@ -722,15 +788,69 @@ class Game {
         window.addEventListener('touchmove', onTouchMove, { passive: true });
         window.addEventListener('touchend', onTouchEnd, { passive: true });
 
-        // Mouse drag simulation for desktop testing
         container.addEventListener('mousedown', onTouchStart);
         window.addEventListener('mousemove', onTouchMove);
         window.addEventListener('mouseup', onTouchEnd);
     }
 
     /* -----------------------------------------------------
-       7. CLEAN WALL COLLISION & SLIDING PHYSICS
+       7. AIRTIGHT RIGID-BODY COLLISION & MOVEMENT PHYSICS
        ----------------------------------------------------- */
+    resolveWallCollisions(px, pz, radius) {
+        let resolvedX = px;
+        let resolvedZ = pz;
+        const rSq = radius * radius;
+
+        // Strict Outer Perimeter Clamping
+        const minBound = WALL_THICKNESS * 0.5 + radius;
+        const maxBoundX = this.maze.cols * CELL_SIZE - WALL_THICKNESS * 0.5 - radius;
+        const maxBoundZ = this.maze.rows * CELL_SIZE - WALL_THICKNESS * 0.5 - radius;
+
+        resolvedX = Math.max(minBound, Math.min(maxBoundX, resolvedX));
+        resolvedZ = Math.max(minBound, Math.min(maxBoundZ, resolvedZ));
+
+        // Rigid Body Box Collisions
+        for (const w of this.wallColliders) {
+            // Broadphase proximity rejection
+            if (resolvedX < w.minX - radius || resolvedX > w.maxX + radius ||
+                resolvedZ < w.minZ - radius || resolvedZ > w.maxZ + radius) {
+                continue;
+            }
+
+            // Closest point on wall AABB
+            const closeX = Math.max(w.minX, Math.min(resolvedX, w.maxX));
+            const closeZ = Math.max(w.minZ, Math.min(resolvedZ, w.maxZ));
+
+            const dx = resolvedX - closeX;
+            const dz = resolvedZ - closeZ;
+            const distSq = dx * dx + dz * dz;
+
+            if (distSq < rSq) {
+                const dist = Math.sqrt(distSq);
+                if (dist > 0.0001) {
+                    // Push out along collision normal
+                    const overlap = radius - dist;
+                    resolvedX += (dx / dist) * overlap;
+                    resolvedZ += (dz / dist) * overlap;
+                } else {
+                    // Center inside wall - push out along minimum overlap axis
+                    const dMinX = Math.abs(resolvedX - w.minX);
+                    const dMaxX = Math.abs(w.maxX - resolvedX);
+                    const dMinZ = Math.abs(resolvedZ - w.minZ);
+                    const dMaxZ = Math.abs(w.maxZ - resolvedZ);
+                    const minOverlap = Math.min(dMinX, dMaxX, dMinZ, dMaxZ);
+
+                    if (minOverlap === dMinX) resolvedX = w.minX - radius;
+                    else if (minOverlap === dMaxX) resolvedX = w.maxX + radius;
+                    else if (minOverlap === dMinZ) resolvedZ = w.minZ - radius;
+                    else resolvedZ = w.maxZ + radius;
+                }
+            }
+        }
+
+        return { x: resolvedX, z: resolvedZ };
+    }
+
     updatePlayerPhysics(dt) {
         const inputLen = Math.hypot(this.inputVector.x, this.inputVector.z);
         this.player.isMoving = inputLen > 0.05 && !this.isGameOver;
@@ -740,25 +860,32 @@ class Game {
             const moveX = this.inputVector.x * moveSpeed * dt;
             const moveZ = this.inputVector.z * moveSpeed * dt;
 
-            // Target facing angle
+            // Target facing angle locked to movement vector
             this.player.targetAngle = Math.atan2(this.inputVector.x, this.inputVector.z);
 
-            // Separate Axis Collision Resolution (Enables smooth sliding around corners)
-            const nextX = this.player.x + moveX;
-            if (!this.checkWallCollision(nextX, this.player.z)) {
-                this.player.x = nextX;
+            // Sub-stepped movement prevents wall tunneling at high speed / frame drops
+            const totalDist = Math.hypot(moveX, moveZ);
+            const maxStep = PLAYER_COLLISION_RADIUS * 0.45;
+            const numSteps = Math.max(1, Math.ceil(totalDist / maxStep));
+            const stepX = moveX / numSteps;
+            const stepZ = moveZ / numSteps;
+
+            for (let s = 0; s < numSteps; s++) {
+                // Separate axis resolution for smooth corner sliding
+                const testX = this.player.x + stepX;
+                const resX = this.resolveWallCollisions(testX, this.player.z, PLAYER_COLLISION_RADIUS);
+                this.player.x = resX.x;
+
+                const testZ = this.player.z + stepZ;
+                const resZ = this.resolveWallCollisions(this.player.x, testZ, PLAYER_COLLISION_RADIUS);
+                this.player.z = resZ.z;
             }
 
-            const nextZ = this.player.z + moveZ;
-            if (!this.checkWallCollision(this.player.x, nextZ)) {
-                this.player.z = nextZ;
-            }
-
-            // Slerp player rotation
+            // Slerp player rotation forward towards travel direction
             let angleDiff = this.player.targetAngle - this.player.angle;
             while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
             while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-            this.player.angle += angleDiff * Math.min(1, dt * 14);
+            this.player.angle += angleDiff * Math.min(1, dt * 18);
 
             // Walk cycle animation
             this.player.walkCycle += dt * 12;
@@ -776,119 +903,99 @@ class Game {
                 this.stepping = false;
             }
         } else {
-            // Idle breathing oscillation
+            // Idle stance
             if (this.playerLegL && this.playerLegR) {
                 this.playerLegL.rotation.x = 0;
                 this.playerLegR.rotation.x = 0;
             }
         }
 
-        // Apply transform to player group
+        // Apply transform to player group & lock lights strictly forward
         if (this.playerGroup) {
             this.playerGroup.position.x = this.player.x;
             this.playerGroup.position.z = this.player.z;
             this.playerGroup.rotation.y = this.player.angle;
-            // Subtle vertical walk bounce
-            this.playerGroup.position.y = this.player.isMoving ? Math.abs(Math.sin(this.player.walkCycle)) * 0.05 : 0;
+            this.playerGroup.position.y = this.player.isMoving ? Math.abs(Math.sin(this.player.walkCycle)) * 0.04 : 0;
         }
 
-        // Check grid step & collectible discovery
-        const curCellX = Math.round(this.player.x / CELL_SIZE);
-        const curCellY = Math.round(this.player.z / CELL_SIZE);
+        // Lock forward spotlight target in world coordinates
+        if (this.spotTarget) {
+            const forwardX = Math.sin(this.player.angle);
+            const forwardZ = Math.cos(this.player.angle);
+            this.spotTarget.position.set(
+                this.player.x + forwardX * 14,
+                0.5,
+                this.player.z + forwardZ * 14
+            );
+        }
+
+        // Grid cell step & collectible tracking
+        const curCellX = Math.floor(this.player.x / CELL_SIZE);
+        const curCellY = Math.floor(this.player.z / CELL_SIZE);
 
         if (curCellX !== this.lastStepTile.x || curCellY !== this.lastStepTile.y) {
             this.lastStepTile = { x: curCellX, y: curCellY };
             this.steps++;
             this.updateHUD();
             this.maze.markTraveled(curCellX, curCellY);
-
-            // Check if player stepped onto letter collectible
-            this.checkLetterPickup(curCellX, curCellY);
         }
-    }
 
-    checkWallCollision(px, pz) {
-        const radius = PLAYER_COLLISION_RADIUS;
-        const minC = Math.max(0, Math.floor((px - radius) / CELL_SIZE));
-        const maxC = Math.min(this.maze.cols - 1, Math.floor((px + radius) / CELL_SIZE));
-        const minR = Math.max(0, Math.floor((pz - radius) / CELL_SIZE));
-        const maxR = Math.min(this.maze.rows - 1, Math.floor((pz + radius) / CELL_SIZE));
-
-        for (let r = minR; r <= maxR; r++) {
-            for (let c = minC; c <= maxC; c++) {
-                if (this.maze.isWall(c, r)) {
-                    // Wall AABB bounds
-                    const minX = c * CELL_SIZE - HALF_CELL;
-                    const maxX = c * CELL_SIZE + HALF_CELL;
-                    const minZ = r * CELL_SIZE - HALF_CELL;
-                    const maxZ = r * CELL_SIZE + HALF_CELL;
-
-                    // Closest point on wall AABB
-                    const closeX = Math.max(minX, Math.min(px, maxX));
-                    const closeZ = Math.max(minZ, Math.min(pz, maxZ));
-
-                    const distX = px - closeX;
-                    const distZ = pz - closeZ;
-                    if (distX * distX + distZ * distZ < radius * radius) {
-                        return true;
-                    }
-                }
-            }
-        }
-        return false;
+        // Proximity letter pickup check
+        this.checkProximityLetterPickup();
     }
 
     /* -----------------------------------------------------
        8. LETTER PICKUP & WIN SEQUENCE
        ----------------------------------------------------- */
-    checkLetterPickup(cellX, cellY) {
-        const letter = this.maze.checkLetterAt(cellX, cellY);
-        if (!letter) return;
+    checkProximityLetterPickup() {
+        for (const l of this.letterGroups) {
+            if (l.collected) continue;
 
-        this.collectedSequence.push(letter.id);
-        this.sound.playLetterCollect(letter.id);
+            const dist = Math.hypot(this.player.x - l.worldX, this.player.z - l.worldZ);
+            if (dist < 1.15) {
+                l.collected = true;
+                const letter = this.maze.checkLetterAt(l.gridX, l.gridY);
+                if (letter) letter.collected = true;
 
-        // Find 3D letter mesh & trigger collection burst
-        const found = this.letterGroups.find(l => l.id === letter.id);
-        if (found) {
-            found.collected = true;
-            this.spawnCollectionParticles(found.group.position.x, 0.8, found.group.position.z, found.light.color);
-            // Hide or scale-out collectible
-            found.group.visible = false;
-        }
+                this.collectedSequence.push(l.id);
+                this.sound.playLetterCollect(l.id);
 
-        // Update minimal HUD badge: A: [✓], C: [✓], N: [✓]
-        const badge = document.getElementById(`badge${letter.id}`);
-        if (badge) {
-            badge.classList.add('collected');
-            badge.innerHTML = `${letter.id}: [✓]`;
-        }
+                this.spawnCollectionParticles(l.worldX, 0.8, l.worldZ, l.light.color);
+                l.group.visible = false;
 
-        this.updateHUD();
-        this.notify(`Spelling ACM: Discovered letter '${letter.id}'! (${this.collectedSequence.length}/3)`);
+                const badge = document.getElementById(`badge${l.id}`);
+                if (badge) {
+                    badge.classList.add('collected');
+                    badge.innerHTML = `${l.id}: [✓]`;
+                }
 
-        // Check victory condition: all target letters collected
-        if (this.maze.isComplete()) {
-            this.triggerVictory();
+                this.updateHUD();
+                this.notify(`Discovered rune '${l.id}'! (${this.collectedSequence.length}/3)`);
+
+                if (this.maze.isComplete()) {
+                    this.triggerVictory();
+                }
+                break;
+            }
         }
     }
 
     spawnCollectionParticles(x, y, z, threeColor) {
-        const count = 32;
+        const count = 30;
         const colorHex = threeColor ? threeColor.getHex() : 0x00f5d4;
 
         for (let i = 0; i < count; i++) {
-            const geo = new THREE.SphereGeometry(Math.random() * 0.08 + 0.04, 6, 6);
+            const geo = new THREE.SphereGeometry(Math.random() * 0.07 + 0.03, 6, 6);
             const mat = new THREE.MeshBasicMaterial({ color: colorHex });
             const mesh = new THREE.Mesh(geo, mat);
             mesh.position.set(x, y, z);
 
             const angle = Math.random() * Math.PI * 2;
-            const speed = Math.random() * 3.5 + 1.2;
+            const speed = Math.random() * 3.2 + 1.0;
             this.particles.push({
                 mesh: mesh,
                 vx: Math.cos(angle) * speed,
-                vy: Math.random() * 3.0 + 2.0,
+                vy: Math.random() * 2.8 + 1.8,
                 vz: Math.sin(angle) * speed,
                 life: 1.0,
                 decay: Math.random() * 0.8 + 0.7
@@ -903,7 +1010,6 @@ class Game {
         clearInterval(this.timerInterval);
         this.sound.playVictory();
 
-        // Victory firework burst on player
         this.spawnCollectionParticles(this.player.x, 1.2, this.player.z, new THREE.Color(0xffb703));
         this.spawnCollectionParticles(this.player.x, 1.6, this.player.z, new THREE.Color(0x00f5d4));
 
@@ -914,24 +1020,23 @@ class Game {
                     steps: this.steps,
                     sequence: this.collectedSequence
                 });
-            }, 500);
+            }, 600);
         }
     }
 
     /* -----------------------------------------------------
-       9. SMOOTH CAMERA TRACKING & SCENE UPDATES
+       9. SMOOTH CAMERA TRACKING & SCENE ANIMATIONS
        ----------------------------------------------------- */
     updateCameraFollow(dt) {
         if (!this.camera) return;
 
         // Slanted Top-Down Follow (Hunter Assassin Perspective)
-        const camElevation = 14.2;
-        const camZOffset = 7.8;
+        const camElevation = 14.0;
+        const camZOffset = 7.5;
 
         const targetCamX = this.player.x;
         const targetCamZ = this.player.z + camZOffset;
 
-        // Smooth camera dampening
         const factor = 1 - Math.exp(-9.0 * dt);
         this.camTarget.x += (targetCamX - this.camTarget.x) * factor;
         this.camTarget.z += (targetCamZ - this.camTarget.z) * factor;
@@ -939,7 +1044,6 @@ class Game {
         this.camera.position.set(this.camTarget.x, camElevation, this.camTarget.z);
         this.camera.lookAt(this.camTarget.x, 0.45, this.camTarget.z - camZOffset);
 
-        // Keep dust points centered on player viewport
         if (this.dustPoints) {
             this.dustPoints.position.x = this.player.x;
             this.dustPoints.position.z = this.player.z;
@@ -947,34 +1051,31 @@ class Game {
     }
 
     updateSceneAnimations(dt, time) {
-        // Torch & Flashlight brightness modulation
+        // Subtle torch flicker modulation
         if (this.torchLight) {
-            this.torchLight.intensity = 5.2 + Math.sin(time * 14) * 0.45 + Math.sin(time * 26) * 0.25;
-        }
-        if (this.visionSpotLight) {
-            this.visionSpotLight.intensity = 8.8 + Math.sin(time * 18) * 0.35;
+            this.torchLight.intensity = 2.4 + Math.sin(time * 12) * 0.2;
         }
 
-        // Orbiting wisps around player
+        // Orbiting Wisps
         this.wisps.forEach(w => {
             w.angle += w.speed * dt;
             w.mesh.position.x = Math.cos(w.angle) * w.radius;
             w.mesh.position.z = Math.sin(w.angle) * w.radius;
-            w.mesh.position.y = 0.85 + Math.sin(time * 4 + w.angle) * 0.2;
+            w.mesh.position.y = 0.8 + Math.sin(time * 4 + w.angle) * 0.18;
         });
 
         // 3D Letter collectibles bobbing & rotation
         this.letterGroups.forEach(l => {
             if (!l.collected && l.mesh) {
                 l.mesh.rotation.y += dt * 1.8;
-                l.mesh.position.y = l.baseY + Math.sin(time * 3.2 + l.gridX) * 0.18;
+                l.mesh.position.y = l.baseY + Math.sin(time * 3.2 + l.gridX) * 0.16;
                 if (l.ring) {
                     l.ring.rotation.z += dt * 0.9;
                 }
             }
         });
 
-        // Particle physics update
+        // Particle updates
         for (let i = this.particles.length - 1; i >= 0; i--) {
             const p = this.particles[i];
             p.life -= p.decay * dt;
@@ -986,7 +1087,7 @@ class Game {
                 p.mesh.position.x += p.vx * dt;
                 p.mesh.position.y += p.vy * dt;
                 p.mesh.position.z += p.vz * dt;
-                p.vy -= 9.8 * dt; // gravity
+                p.vy -= 9.8 * dt;
                 p.mesh.scale.setScalar(p.life);
             }
         }
@@ -1058,12 +1159,15 @@ class Game {
     }
 
     resetGame() {
-        // Generate fresh maze & randomized A, C, N positions
+        // Generate fresh maze
         this.maze = new Maze(this.mazeSize, this.mazeSize);
 
-        // Reset player transform
-        this.player.x = this.maze.startPos.x * CELL_SIZE;
-        this.player.z = this.maze.startPos.y * CELL_SIZE;
+        // Reset player transform to cell center
+        const startWorldX = (this.maze.startPos.x + 0.5) * CELL_SIZE;
+        const startWorldZ = (this.maze.startPos.y + 0.5) * CELL_SIZE;
+
+        this.player.x = startWorldX;
+        this.player.z = startWorldZ;
         this.player.angle = 0;
         this.player.targetAngle = 0;
         this.lastStepTile = { x: this.maze.startPos.x, y: this.maze.startPos.y };
@@ -1075,7 +1179,6 @@ class Game {
         this.collectedSequence = [];
 
         // Clear and rebuild 3D maze & collectibles
-        if (this.wallsGroup) this.scene.remove(this.wallsGroup);
         this.buildDungeonMaze();
         this.buildLetterCollectibles();
 

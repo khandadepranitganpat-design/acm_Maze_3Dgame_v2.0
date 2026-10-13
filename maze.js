@@ -1,172 +1,270 @@
 /**
- * Maze Generator & Manager
- * Implements Medium Difficulty Maze Generation via Randomized Depth-First Search (Recursive Backtracker)
+ * Maze Generator & Manager (v2 Cell-Based Architecture)
+ * Generates an open labyrinth with thin low-poly walls and wide corridors.
+ * Calibrated for optimal mobile visibility and smooth player navigation.
  */
+
 class Maze {
-    constructor(cols = 25, rows = 25) {
-        // Must be odd numbers for wall/corridor grid
-        this.cols = cols % 2 === 0 ? cols + 1 : cols;
-        this.rows = rows % 2 === 0 ? rows + 1 : rows;
-        this.grid = []; // 1 = Wall, 0 = Path
-        this.traveled = []; // Boolean 2D array: true if player walked here
-        this.letters = []; // [ { id: 'A', x, y, collected: false, revealed: false, animTime: 0 } ]
-        this.startPos = { x: 1, y: 1 };
+    constructor(cols = 16, rows = 16) {
+        this.cols = Math.max(10, cols);
+        this.rows = Math.max(10, rows);
+        this.cells = [];     // 2D array of cell objects: { x, y, top, right, bottom, left, visited }
+        this.letters = [];   // [ { id: 'A', x, y, collected: false, revealed: false } ]
+        this.traveled = [];  // Boolean 2D array for visited cells
+        this.startPos = { x: 0, y: 0 };
         this.init();
     }
 
     init() {
-        // Initialize grid full of walls (1)
-        this.grid = Array.from({ length: this.rows }, () => Array(this.cols).fill(1));
+        // Initialize cells grid with all 4 walls closed
+        this.cells = Array.from({ length: this.rows }, (_, r) =>
+            Array.from({ length: this.cols }, (_, c) => ({
+                x: c,
+                y: r,
+                top: true,
+                right: true,
+                bottom: true,
+                left: true,
+                visited: false
+            }))
+        );
+
         this.traveled = Array.from({ length: this.rows }, () => Array(this.cols).fill(false));
-
-        // Generate medium-hardness maze using recursive backtracker
-        this.generateMaze();
-
-        // Mark player start as traveled
-        this.startPos = { x: 1, y: 1 };
-        this.grid[this.startPos.y][this.startPos.x] = 0;
         this.traveled[this.startPos.y][this.startPos.x] = true;
 
-        // Spawn ACM spell letters randomly on path cells
+        // Generate perfect maze using Recursive Backtracker
+        this.generateMaze();
+
+        // Braid maze slightly to create loops and alternate routes (medium difficulty)
+        this.braidMaze(0.18);
+
+        // Spawn letters A, C, N spaced far apart
         this.spawnLetters();
     }
 
     generateMaze() {
-        // Depth-First Search carving with occasional loop factor for medium navigation
         const stack = [];
-        const startX = 1;
-        const startY = 1;
-        this.grid[startY][startX] = 0;
-        stack.push([startX, startY]);
+        let current = this.cells[this.startPos.y][this.startPos.x];
+        current.visited = true;
+        stack.push(current);
 
         const directions = [
-            [0, -2], // North
-            [2, 0],  // East
-            [0, 2],  // South
-            [-2, 0]  // West
+            { dx: 0, dy: -1, wall: 'top', opp: 'bottom' },
+            { dx: 1, dy: 0, wall: 'right', opp: 'left' },
+            { dx: 0, dy: 1, wall: 'bottom', opp: 'top' },
+            { dx: -1, dy: 0, wall: 'left', opp: 'right' }
         ];
 
         while (stack.length > 0) {
-            const [cx, cy] = stack[stack.length - 1];
-            // Find unvisited neighbors at step 2
-            const neighbors = [];
+            current = stack[stack.length - 1];
+            const unvisitedNeighbors = [];
 
-            // Shuffle directions randomly
-            const shuffledDirs = [...directions].sort(() => Math.random() - 0.5);
+            for (const dir of directions) {
+                const nx = current.x + dir.dx;
+                const ny = current.y + dir.dy;
 
-            for (const [dx, dy] of shuffledDirs) {
-                const nx = cx + dx;
-                const ny = cy + dy;
-
-                if (nx > 0 && nx < this.cols - 1 && ny > 0 && ny < this.rows - 1) {
-                    if (this.grid[ny][nx] === 1) {
-                        neighbors.push([nx, ny, dx, dy]);
+                if (nx >= 0 && nx < this.cols && ny >= 0 && ny < this.rows) {
+                    const neighbor = this.cells[ny][nx];
+                    if (!neighbor.visited) {
+                        unvisitedNeighbors.push({ cell: neighbor, dir });
                     }
                 }
             }
 
-            if (neighbors.length > 0) {
-                // Pick one random neighbor
-                const [nx, ny, dx, dy] = neighbors[Math.floor(Math.random() * neighbors.length)];
-                // Carve wall between
-                this.grid[cy + dy / 2][cx + dx / 2] = 0;
-                // Carve cell
-                this.grid[ny][nx] = 0;
-                stack.push([nx, ny]);
+            if (unvisitedNeighbors.length > 0) {
+                const { cell: nextCell, dir } = unvisitedNeighbors[Math.floor(Math.random() * unvisitedNeighbors.length)];
+
+                // Knock down walls between current and neighbor
+                current[dir.wall] = false;
+                nextCell[dir.opp] = false;
+
+                nextCell.visited = true;
+                stack.push(nextCell);
             } else {
                 stack.pop();
             }
         }
+    }
 
-        // Add a few subtle braids/loops (medium difficulty features instead of pure strict tree)
-        // This gives multiple navigation choices and reduces frustration while keeping maze challenging
-        const loopCount = Math.floor((this.cols * this.rows) * 0.015);
-        for (let i = 0; i < loopCount; i++) {
-            const rx = 1 + 2 * Math.floor(Math.random() * ((this.cols - 2) / 2));
-            const ry = 1 + 2 * Math.floor(Math.random() * ((this.rows - 2) / 2));
-            const [dx, dy] = directions[Math.floor(Math.random() * directions.length)];
-            const wx = rx + dx / 2;
-            const wy = ry + dy / 2;
-            if (wx > 0 && wx < this.cols - 1 && wy > 0 && wy < this.rows - 1) {
-                this.grid[wy][wx] = 0;
+    braidMaze(braidRatio = 0.18) {
+        // Find dead ends (cells with 3 walls closed) and open one wall to introduce loops
+        for (let r = 0; r < this.rows; r++) {
+            for (let c = 0; c < this.cols; c++) {
+                const cell = this.cells[r][c];
+                let wallCount = 0;
+                if (cell.top) wallCount++;
+                if (cell.right) wallCount++;
+                if (cell.bottom) wallCount++;
+                if (cell.left) wallCount++;
+
+                if (wallCount >= 3 && Math.random() < braidRatio) {
+                    const candidates = [];
+                    if (cell.top && r > 0) candidates.push({ dir: 'top', opp: 'bottom', nx: c, ny: r - 1 });
+                    if (cell.right && c < this.cols - 1) candidates.push({ dir: 'right', opp: 'left', nx: c + 1, ny: r });
+                    if (cell.bottom && r < this.rows - 1) candidates.push({ dir: 'bottom', opp: 'top', nx: c, ny: r + 1 });
+                    if (cell.left && c > 0) candidates.push({ dir: 'left', opp: 'right', nx: c - 1, ny: r });
+
+                    if (candidates.length > 0) {
+                        const pick = candidates[Math.floor(Math.random() * candidates.length)];
+                        cell[pick.dir] = false;
+                        this.cells[pick.ny][pick.nx][pick.opp] = false;
+                    }
+                }
             }
         }
     }
 
     spawnLetters() {
-        // Find all walkable empty path cells except start area
-        const pathCells = [];
-        for (let r = 1; r < this.rows - 1; r++) {
-            for (let c = 1; c < this.cols - 1; c++) {
-                if (this.grid[r][c] === 0) {
-                    // Avoid immediate start vicinity (manhattan distance > 6)
-                    const distFromStart = Math.abs(c - this.startPos.x) + Math.abs(r - this.startPos.y);
-                    if (distFromStart > 6) {
-                        pathCells.push({ x: c, y: r });
-                    }
+        const candidateCells = [];
+        for (let r = 0; r < this.rows; r++) {
+            for (let c = 0; c < this.cols; c++) {
+                const distFromStart = Math.abs(c - this.startPos.x) + Math.abs(r - this.startPos.y);
+                if (distFromStart >= 5) {
+                    candidateCells.push({ x: c, y: r });
                 }
             }
         }
 
-        // Shuffle path cells
-        pathCells.sort(() => Math.random() - 0.5);
+        // Shuffle candidate cells
+        candidateCells.sort(() => Math.random() - 0.5);
 
-        // Pick distinct positions for letters 'A', 'C', 'N'
-        // Ensure distance between each letter is significant
-        const spellLetters = ['A', 'C', 'N'];
+        const targetChars = ['A', 'C', 'N'];
         this.letters = [];
 
-        for (const char of spellLetters) {
-            let chosenIndex = -1;
+        for (const char of targetChars) {
+            let selectedIdx = -1;
 
-            for (let i = 0; i < pathCells.length; i++) {
-                const cell = pathCells[i];
-                // Check distance against already picked letters
-                const tooClose = this.letters.some(l => {
-                    const dist = Math.abs(l.x - cell.x) + Math.abs(l.y - cell.y);
-                    return dist < 8; // At least 8 tiles away from each other
+            for (let i = 0; i < candidateCells.length; i++) {
+                const cell = candidateCells[i];
+                const farEnough = this.letters.every(l => {
+                    const d = Math.abs(l.x - cell.x) + Math.abs(l.y - cell.y);
+                    return d >= 6;
                 });
 
-                if (!tooClose) {
-                    chosenIndex = i;
+                if (farEnough) {
+                    selectedIdx = i;
                     break;
                 }
             }
 
-            // Fallback to first available if distance constraint couldn't be met
-            if (chosenIndex === -1 && pathCells.length > 0) {
-                chosenIndex = 0;
+            if (selectedIdx === -1 && candidateCells.length > 0) {
+                selectedIdx = 0;
             }
 
-            if (chosenIndex !== -1) {
-                const [picked] = pathCells.splice(chosenIndex, 1);
+            if (selectedIdx !== -1) {
+                const [picked] = candidateCells.splice(selectedIdx, 1);
                 this.letters.push({
                     id: char,
                     x: picked.x,
                     y: picked.y,
                     collected: false,
-                    revealed: false,
-                    animScale: 1,
-                    burstParticles: []
+                    revealed: false
                 });
             }
         }
     }
 
-    isWall(x, y) {
-        if (x < 0 || x >= this.cols || y < 0 || y >= this.rows) return true;
-        return this.grid[y][x] === 1;
+    /**
+     * Generate AABB Bounding Box colliders for all thin walls and outer perimeter.
+     * @param {number} cellSize - Width/Depth of a corridor cell (e.g. 2.6)
+     * @param {number} wallThickness - Thin wall thickness (e.g. 0.32)
+     * @returns {Array<{ minX: number, maxX: number, minZ: number, maxZ: number, type: string }>}
+     */
+    getWallColliders(cellSize, wallThickness) {
+        const colliders = [];
+        const halfThick = wallThickness * 0.5;
+
+        // 1. Outer perimeter boundaries
+        const mazeWidth = this.cols * cellSize;
+        const mazeHeight = this.rows * cellSize;
+
+        // North perimeter (top edge)
+        colliders.push({
+            minX: -halfThick,
+            maxX: mazeWidth + halfThick,
+            minZ: -halfThick,
+            maxZ: halfThick,
+            type: 'outer'
+        });
+        // South perimeter (bottom edge)
+        colliders.push({
+            minX: -halfThick,
+            maxX: mazeWidth + halfThick,
+            minZ: mazeHeight - halfThick,
+            maxZ: mazeHeight + halfThick,
+            type: 'outer'
+        });
+        // West perimeter (left edge)
+        colliders.push({
+            minX: -halfThick,
+            maxX: halfThick,
+            minZ: -halfThick,
+            maxZ: mazeHeight + halfThick,
+            type: 'outer'
+        });
+        // East perimeter (right edge)
+        colliders.push({
+            minX: mazeWidth - halfThick,
+            maxX: mazeWidth + halfThick,
+            minZ: -halfThick,
+            maxZ: mazeHeight + halfThick,
+            type: 'outer'
+        });
+
+        // 2. Internal thin walls
+        for (let r = 0; r < this.rows; r++) {
+            for (let c = 0; c < this.cols; c++) {
+                const cell = this.cells[r][c];
+                const x0 = c * cellSize;
+                const x1 = (c + 1) * cellSize;
+                const z0 = r * cellSize;
+                const z1 = (r + 1) * cellSize;
+
+                // Vertical wall between cell (c, r) and (c + 1, r)
+                if (cell.right && c < this.cols - 1) {
+                    colliders.push({
+                        minX: x1 - halfThick,
+                        maxX: x1 + halfThick,
+                        minZ: z0 - halfThick,
+                        maxZ: z1 + halfThick,
+                        type: 'v-wall'
+                    });
+                }
+
+                // Horizontal wall between cell (c, r) and (c, r + 1)
+                if (cell.bottom && r < this.rows - 1) {
+                    colliders.push({
+                        minX: x0 - halfThick,
+                        maxX: x1 + halfThick,
+                        minZ: z1 - halfThick,
+                        maxZ: z1 + halfThick,
+                        type: 'h-wall'
+                    });
+                }
+
+                // Corner junction posts (at grid intersections)
+                colliders.push({
+                    minX: x0 - halfThick,
+                    maxX: x0 + halfThick,
+                    minZ: z0 - halfThick,
+                    maxZ: z0 + halfThick,
+                    type: 'corner'
+                });
+            }
+        }
+
+        return colliders;
     }
 
-    markTraveled(x, y) {
-        if (x >= 0 && x < this.cols && y >= 0 && y < this.rows) {
-            this.traveled[y][x] = true;
+    markTraveled(cellX, cellY) {
+        if (cellX >= 0 && cellX < this.cols && cellY >= 0 && cellY < this.rows) {
+            this.traveled[cellY][cellX] = true;
         }
     }
 
-    checkLetterAt(x, y) {
+    checkLetterAt(cellX, cellY) {
         for (const letter of this.letters) {
-            if (!letter.collected && letter.x === x && letter.y === y) {
+            if (!letter.collected && letter.x === cellX && letter.y === cellY) {
                 letter.revealed = true;
                 letter.collected = true;
                 return letter;
