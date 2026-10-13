@@ -123,13 +123,14 @@ class Game {
     initThree() {
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0x0c1322);
-        this.scene.fog = new THREE.FogExp2(0x0c1322, 0.024);
+        this.scene.fog = new THREE.FogExp2(0x0c1322, 0.018);
 
-        // Localized Follow-Camera with tight frustum to cull distant geometry
+        // Localized Top-Down Follow-Camera with full view frustum range
         const aspect = this.canvas.clientWidth / (this.canvas.clientHeight || 1);
-        this.camera = new THREE.PerspectiveCamera(46, aspect, 0.2, 55); // Near 0.2, Far 55
-        this.camera.position.set(this.player.x, 14.2, this.player.z + 7.8);
+        this.camera = new THREE.PerspectiveCamera(46, aspect, 0.1, 1000);
+        this.camera.position.set(this.player.x, 14.0, this.player.z + 7.5);
         this.camera.lookAt(this.player.x, 0.45, this.player.z);
+        this.camera.updateProjectionMatrix();
 
         // WebGL Renderer optimized for mobile performance
         this.renderer = new THREE.WebGLRenderer({
@@ -142,18 +143,18 @@ class Game {
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        this.renderer.toneMappingExposure = 1.05;
+        this.renderer.toneMappingExposure = 1.1;
 
-        // Balanced Ambient Fill
-        const ambient = new THREE.AmbientLight(0x2d3e5e, 0.52);
+        // Persistent Baseline Ambient Fill (guarantees surfaces never collapse to pure pitch black)
+        const ambient = new THREE.AmbientLight(0x3a4f6e, 0.45);
         this.scene.add(ambient);
 
         // Soft Hemisphere Light (Sky cyan, ground dark stone)
-        const hemiLight = new THREE.HemisphereLight(0x4ba3e3, 0x111c2e, 0.38);
+        const hemiLight = new THREE.HemisphereLight(0x56a6db, 0x142035, 0.35);
         this.scene.add(hemiLight);
 
         // Directional Moonlit Fill
-        const moonLight = new THREE.DirectionalLight(0x6ba4d9, 0.42);
+        const moonLight = new THREE.DirectionalLight(0x7ea7dc, 0.45);
         moonLight.position.set(22, 38, 16);
         this.scene.add(moonLight);
 
@@ -185,37 +186,42 @@ class Game {
         const mazeWidth = this.maze.cols * CELL_SIZE;
         const mazeHeight = this.maze.rows * CELL_SIZE;
 
-        // 1. Base Ground Plane (1 draw call)
-        const groundGeo = new THREE.PlaneGeometry(mazeWidth + 30, mazeHeight + 30, 4, 4);
+        // 1. Base Ground Plane (Mesh with computeBoundingBox/Sphere and frustumCulled = false)
+        const groundGeo = new THREE.PlaneGeometry(mazeWidth + 40, mazeHeight + 40, 2, 2);
+        groundGeo.computeBoundingBox();
+        groundGeo.computeBoundingSphere();
         const groundMat = new THREE.MeshStandardMaterial({
-            color: 0x090f1a,
-            roughness: 0.9,
+            color: 0x0c1524,
+            roughness: 0.85,
             metalness: 0.1
         });
         const groundMesh = new THREE.Mesh(groundGeo, groundMat);
         groundMesh.rotation.x = -Math.PI / 2;
         groundMesh.position.set(mazeWidth * 0.5, -0.02, mazeHeight * 0.5);
         groundMesh.receiveShadow = true;
+        groundMesh.frustumCulled = false;
         this.scene.add(groundMesh);
         this.mazeMeshes.push(groundMesh);
 
-        // 2. Floor Flagstone Tiles (Batched into ONE InstancedMesh = 1 draw call)
+        // 2. Floor Flagstone Tiles (Batched into ONE InstancedMesh)
         const tilesPerCell = 2;
         const tileMargin = 0.04;
         const tileSize = (CELL_SIZE / tilesPerCell) - tileMargin;
         const totalTiles = this.maze.cols * this.maze.rows * tilesPerCell * tilesPerCell;
 
         const tileGeo = new THREE.BoxGeometry(tileSize, 0.04, tileSize);
+        tileGeo.computeBoundingBox();
+        tileGeo.computeBoundingSphere();
         const tileMat = new THREE.MeshStandardMaterial({
-            color: 0x19263e,
-            roughness: 0.68,
-            metalness: 0.22,
+            color: 0x1e2f4c,
+            roughness: 0.65,
+            metalness: 0.2,
             emissive: 0x0c1524,
-            emissiveIntensity: 0.14
+            emissiveIntensity: 0.15
         });
         const tileInstanced = new THREE.InstancedMesh(tileGeo, tileMat, totalTiles);
         tileInstanced.receiveShadow = true;
-        tileInstanced.frustumCulled = true;
+        tileInstanced.frustumCulled = false;
 
         const dummy = new THREE.Object3D();
         let tileIdx = 0;
@@ -260,13 +266,15 @@ class Game {
         const corners = this.wallColliders.filter(w => w.type === 'corner');
         const outerWalls = this.wallColliders.filter(w => w.type === 'outer');
 
-        // A. Batch Horizontal Internal Walls into ONE InstancedMesh (1 draw call)
+        // A. Batch Horizontal Internal Walls into ONE InstancedMesh
         if (hInternal.length > 0) {
             const hWallGeo = new THREE.BoxGeometry(CELL_SIZE + WALL_THICKNESS, WALL_HEIGHT, WALL_THICKNESS);
+            hWallGeo.computeBoundingBox();
+            hWallGeo.computeBoundingSphere();
             const hInstanced = new THREE.InstancedMesh(hWallGeo, wallMat, hInternal.length);
             hInstanced.castShadow = true;
             hInstanced.receiveShadow = true;
-            hInstanced.frustumCulled = true;
+            hInstanced.frustumCulled = false;
 
             hInternal.forEach((w, i) => {
                 dummy.position.set((w.minX + w.maxX) * 0.5, WALL_HEIGHT * 0.5, (w.minZ + w.maxZ) * 0.5);
@@ -280,13 +288,15 @@ class Game {
             this.mazeMeshes.push(hInstanced);
         }
 
-        // B. Batch Vertical Internal Walls into ONE InstancedMesh (1 draw call)
+        // B. Batch Vertical Internal Walls into ONE InstancedMesh
         if (vInternal.length > 0) {
             const vWallGeo = new THREE.BoxGeometry(WALL_THICKNESS, WALL_HEIGHT, CELL_SIZE + WALL_THICKNESS);
+            vWallGeo.computeBoundingBox();
+            vWallGeo.computeBoundingSphere();
             const vInstanced = new THREE.InstancedMesh(vWallGeo, wallMat, vInternal.length);
             vInstanced.castShadow = true;
             vInstanced.receiveShadow = true;
-            vInstanced.frustumCulled = true;
+            vInstanced.frustumCulled = false;
 
             vInternal.forEach((w, i) => {
                 dummy.position.set((w.minX + w.maxX) * 0.5, WALL_HEIGHT * 0.5, (w.minZ + w.maxZ) * 0.5);
@@ -300,13 +310,15 @@ class Game {
             this.mazeMeshes.push(vInstanced);
         }
 
-        // C. Batch Corner Posts into ONE InstancedMesh (1 draw call)
+        // C. Batch Corner Posts into ONE InstancedMesh
         if (corners.length > 0) {
             const cornerGeo = new THREE.BoxGeometry(WALL_THICKNESS, WALL_HEIGHT, WALL_THICKNESS);
+            cornerGeo.computeBoundingBox();
+            cornerGeo.computeBoundingSphere();
             const cornerInstanced = new THREE.InstancedMesh(cornerGeo, wallMat, corners.length);
             cornerInstanced.castShadow = true;
             cornerInstanced.receiveShadow = true;
-            cornerInstanced.frustumCulled = true;
+            cornerInstanced.frustumCulled = false;
 
             corners.forEach((w, i) => {
                 dummy.position.set((w.minX + w.maxX) * 0.5, WALL_HEIGHT * 0.5, (w.minZ + w.maxZ) * 0.5);
@@ -320,16 +332,18 @@ class Game {
             this.mazeMeshes.push(cornerInstanced);
         }
 
-        // D. Outer Perimeter Walls (4 individual walls)
+        // D. Outer Perimeter Walls
         outerWalls.forEach(w => {
             const wWidth = w.maxX - w.minX;
             const wDepth = w.maxZ - w.minZ;
             const geo = new THREE.BoxGeometry(wWidth, WALL_HEIGHT, wDepth);
+            geo.computeBoundingBox();
+            geo.computeBoundingSphere();
             const mesh = new THREE.Mesh(geo, wallMat);
             mesh.position.set((w.minX + w.maxX) * 0.5, WALL_HEIGHT * 0.5, (w.minZ + w.maxZ) * 0.5);
             mesh.castShadow = true;
             mesh.receiveShadow = true;
-            mesh.frustumCulled = true;
+            mesh.frustumCulled = false;
             this.scene.add(mesh);
             this.mazeMeshes.push(mesh);
         });
@@ -532,6 +546,7 @@ class Game {
             const ringMesh = new THREE.Mesh(ringGeo, ringMat);
             ringMesh.rotation.x = -Math.PI / 2;
             ringMesh.position.y = 0.03;
+            ringMesh.frustumCulled = false;
             group.add(ringMesh);
 
             // Procedural Extruded 3D Letter Mesh
@@ -544,6 +559,7 @@ class Game {
                 metalness: 0.5
             });
             const letterMesh = new THREE.Mesh(letterGeo, letterMat);
+            letterMesh.frustumCulled = false;
             group.add(letterMesh);
 
             // Local Glowing PointLight
@@ -624,6 +640,8 @@ class Game {
 
         const geo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
         geo.center();
+        geo.computeBoundingBox();
+        geo.computeBoundingSphere();
         return geo;
     }
 
