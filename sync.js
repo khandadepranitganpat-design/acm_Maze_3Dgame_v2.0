@@ -224,7 +224,7 @@ class GameSync {
     }
 
     // Check if nickname is unique (case-insensitive)
-    isNameAvailable(name) {
+    isNameAvailable(name, existingPlayerId = null) {
         if (this.provider === "LOCAL") {
             try {
                 const saved = localStorage.getItem(`acm_state_${this.roomId}`);
@@ -240,6 +240,10 @@ class GameSync {
         const clean = name.trim().toLowerCase();
         for (const pid in this.cachedState.players) {
             const p = this.cachedState.players[pid];
+            // If it is the same player ID reconnecting, allow it
+            if (existingPlayerId && (pid === existingPlayerId || p.id === existingPlayerId)) {
+                continue;
+            }
             if (p.name && p.name.trim().toLowerCase() === clean) {
                 return false;
             }
@@ -247,7 +251,33 @@ class GameSync {
         return true;
     }
 
-    async joinPlayer(name) {
+    joinLocalPlayer(trimmed, existingPlayerId = null) {
+        const clean = trimmed.toLowerCase();
+        for (const pid in this.cachedState.players) {
+            const p = this.cachedState.players[pid];
+            if ((existingPlayerId && (pid === existingPlayerId || p.id === existingPlayerId)) ||
+                (p.name && p.name.trim().toLowerCase() === clean)) {
+                p.name = trimmed;
+                this.saveLocalState();
+                return { success: true, playerId: p.id || pid, player: p };
+            }
+        }
+
+        const playerId = existingPlayerId || ("p_" + Date.now() + "_" + Math.floor(Math.random() * 1000));
+        const playerObj = {
+            id: playerId,
+            name: trimmed,
+            joinedAt: Date.now(),
+            finished: false,
+            finishTimeSeconds: null,
+            finishTimeFormatted: null
+        };
+        this.cachedState.players[playerId] = playerObj;
+        this.saveLocalState();
+        return { success: true, playerId, player: playerObj };
+    }
+
+    async joinPlayer(name, existingPlayerId = null) {
         // Ensure provider initialization has finished
         if (this.initPromise) {
             await this.initPromise;
@@ -259,15 +289,34 @@ class GameSync {
         }
 
         if (this.provider === "VERCEL") {
-            return await this.vercelAction("join", { name: trimmed });
+            try {
+                const res = await this.vercelAction("join", { name: trimmed, playerId: existingPlayerId });
+                if (res && res.success) {
+                    return res;
+                }
+                // If it returned a validation error (other than network), return it
+                if (res && res.error && !res.error.includes("fetch") && !res.error.includes("Network")) {
+                    return res;
+                }
+            } catch (err) {}
+            // Transparently fallback to local sync on network failure
+            console.warn("API join unreachable, falling back to local provider");
+            this.provider = "LOCAL";
+            this.initLocalSync();
+            return this.joinLocalPlayer(trimmed, existingPlayerId);
         }
 
         if (this.provider === "FIREBASE" && this.db) {
-            if (!this.isNameAvailable(trimmed)) {
-                return { success: false, error: `The name "${trimmed}" is already taken! Please enter a different name.` };
-            }
             try {
-                const playerId = "p_" + Date.now() + "_" + Math.floor(Math.random() * 1000);
+                if (!this.isNameAvailable(trimmed, existingPlayerId)) {
+                    for (const pid in this.cachedState.players) {
+                        const p = this.cachedState.players[pid];
+                        if (p.name && p.name.trim().toLowerCase() === trimmed.toLowerCase()) {
+                            return { success: true, playerId: p.id || pid, player: p };
+                        }
+                    }
+                }
+                const playerId = existingPlayerId || ("p_" + Date.now() + "_" + Math.floor(Math.random() * 1000));
                 const playerObj = {
                     id: playerId,
                     name: trimmed,
@@ -283,26 +332,15 @@ class GameSync {
                 }, { merge: true });
                 return { success: true, playerId, player: playerObj };
             } catch (e) {
-                return { success: false, error: "Cloud sync error: " + e.message };
+                console.warn("Firebase join failed, falling back to local:", e);
+                this.provider = "LOCAL";
+                this.initLocalSync();
+                return this.joinLocalPlayer(trimmed, existingPlayerId);
             }
         }
 
         // Local fallback
-        if (!this.isNameAvailable(trimmed)) {
-            return { success: false, error: `The name "${trimmed}" is already taken! Please enter a different name.` };
-        }
-        const playerId = "p_" + Date.now() + "_" + Math.floor(Math.random() * 1000);
-        const playerObj = {
-            id: playerId,
-            name: trimmed,
-            joinedAt: Date.now(),
-            finished: false,
-            finishTimeSeconds: null,
-            finishTimeFormatted: null
-        };
-        this.cachedState.players[playerId] = playerObj;
-        this.saveLocalState();
-        return { success: true, playerId, player: playerObj };
+        return this.joinLocalPlayer(trimmed, existingPlayerId);
     }
 
     async markPlayerFinished(playerId, seconds, formatted) {

@@ -63,15 +63,16 @@ class PlayerController {
             joinBtn.textContent = "Joining...";
 
             try {
-                const res = await this.sync.joinPlayer(name);
-                if (!res.success) {
-                    this.showError(res.error || "Could not join lobby.");
-                    joinBtn.disabled = false;
-                    joinBtn.textContent = "Join Game";
-                    return;
+                const existingId = this.currentPlayer ? this.currentPlayer.id : null;
+                const res = await this.sync.joinPlayer(name, existingId);
+                if (!res || !res.success) {
+                    console.warn("Lobby join notice:", res?.error);
+                    // Fallback local join so player is never locked out of gameplay
+                    this.currentPlayer = { id: existingId || ("p_" + Date.now()), name: name };
+                } else {
+                    this.currentPlayer = { id: res.playerId, name: res.player.name };
                 }
 
-                this.currentPlayer = { id: res.playerId, name: res.player.name };
                 try {
                     sessionStorage.setItem(`acm_player_${this.roomId}`, JSON.stringify(this.currentPlayer));
                 } catch (e) {}
@@ -79,8 +80,10 @@ class PlayerController {
                 // Directly transition into active gameplay view / maze interface
                 this.launchGame(this.cachedTimeLimit || 120, this.cachedStartTime || Date.now());
             } catch (err) {
-                console.error("Join error:", err);
-                this.showError("Network error joining lobby. Please try again.");
+                console.error("Join fallback:", err);
+                const fallbackId = (this.currentPlayer && this.currentPlayer.id) ? this.currentPlayer.id : ("p_" + Date.now());
+                this.currentPlayer = { id: fallbackId, name: name };
+                this.launchGame(this.cachedTimeLimit || 120, Date.now());
             } finally {
                 joinBtn.disabled = false;
                 joinBtn.textContent = "Join Game";

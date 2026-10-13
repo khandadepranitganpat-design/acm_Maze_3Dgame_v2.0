@@ -5,9 +5,10 @@
  * across all cellular networks (4G/5G) and Wi-Fi connections worldwide.
  */
 
-// Persistent Redis backend configuration (free serverless cloud store)
-const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL || "https://grateful-walleye-229146.upstash.io";
-const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || "gQAAAAAAA38aAQIgcDI5MmU3Y2I1ZGVhMjc0MzA2YmE5NmEwYWRiM2UyMWE5Yg";
+// Persistent Redis backend configuration (enabled in production Vercel serverless environment)
+const IS_VERCEL = !!process.env.VERCEL;
+const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL || (IS_VERCEL ? "https://grateful-walleye-229146.upstash.io" : null);
+const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || (IS_VERCEL ? "gQAAAAAAA38aAQIgcDI5MmU3Y2I1ZGVhMjc0MzA2YmE5NmEwYWRiM2UyMWE5Yg" : null);
 
 // Local fallback in case of network timeout
 if (!global.__ACM_ROOMS__) {
@@ -156,6 +157,7 @@ module.exports = async function handler(req, res) {
 
         if (action === "join") {
             const name = (body.name || "").trim();
+            const reqPlayerId = body.playerId;
             if (!name) {
                 return res.status(400).json({ success: false, error: "Please enter a nickname." });
             }
@@ -163,9 +165,17 @@ module.exports = async function handler(req, res) {
             // Case-insensitive duplicate name check
             const cleanName = name.toLowerCase();
             const existingPlayers = Object.values(room.players || {});
-            const isTaken = existingPlayers.some(p => p.name && p.name.toLowerCase() === cleanName);
-            if (isTaken) {
-                return res.status(400).json({ success: false, error: `The name "${name}" is already taken! Please enter a different name.` });
+
+            // Reconnection: If player with this ID or same name already exists in room, reconnect them seamlessly
+            const existingPlayer = existingPlayers.find(p =>
+                (reqPlayerId && p.id === reqPlayerId) ||
+                (p.name && p.name.toLowerCase() === cleanName)
+            );
+
+            if (existingPlayer) {
+                existingPlayer.name = name;
+                await saveRoomState(roomId, room);
+                return res.status(200).json({ success: true, playerId: existingPlayer.id, player: existingPlayer, room });
             }
 
             const playerId = "p_" + Date.now() + "_" + Math.floor(Math.random() * 1000);
