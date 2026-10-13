@@ -364,8 +364,12 @@
                         <label style="font-weight: 700; font-size: 0.95rem; color: #f8fafc;">
                             ⏱️ Round Time Limit:
                         </label>
-                        <select id="timeLimitSelect" class="time-select">
-                            <option value="120" selected>2 Minutes (02:00 ➔ 00:00)</option>
+                        <select id="timeLimitSelect" class="time-select" onchange="updateHostTimerPreview()">
+                            <option value="60">1 Min (01:00 ➔ 00:00)</option>
+                            <option value="120" selected>2 Min (02:00 ➔ 00:00)</option>
+                            <option value="180">3 Min (03:00 ➔ 00:00)</option>
+                            <option value="240">4 Min (04:00 ➔ 00:00)</option>
+                            <option value="300">5 Min (05:00 ➔ 00:00)</option>
                         </select>
                     </div>
 
@@ -578,8 +582,14 @@
                     clearInterval(hostTimerInterval);
                     hostTimerInterval = null;
                 }
+                const selectEl = document.getElementById("timeLimitSelect");
+                const limit = (selectEl && selectEl.value) ? parseInt(selectEl.value) : (state.timeLimit || 120);
                 const display = document.getElementById("hostLiveTimerDisplay");
-                if (display) display.innerText = "02:00";
+                if (display) {
+                    const mins = String(Math.floor(limit / 60)).padStart(2, '0');
+                    const secs = String(limit % 60).padStart(2, '0');
+                    display.innerText = `${mins}:${secs}`;
+                }
                 hideHostCountdown();
                 showPhase("hostLobbyPhase");
                 renderLobbyPlayers(players);
@@ -684,6 +694,19 @@
                 tag.innerHTML = `<span style="color: ${col};">👤</span> ${escapeHtml(p.name)}`;
                 container.appendChild(tag);
             });
+        }
+
+        function updateHostTimerPreview() {
+            const selectEl = document.getElementById("timeLimitSelect");
+            if (!selectEl) return;
+            const limit = parseInt(selectEl.value) || 120;
+            hostRemainingSecs = limit;
+            const display = document.getElementById("hostLiveTimerDisplay");
+            if (display) {
+                const mins = String(Math.floor(limit / 60)).padStart(2, '0');
+                const secs = String(limit % 60).padStart(2, '0');
+                display.innerText = `${mins}:${secs}`;
+            }
         }
 
         function hostStartGame() {

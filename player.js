@@ -219,7 +219,11 @@ class PlayerController {
         const timerVal = document.getElementById("timerVal");
         const statusBanner = document.getElementById("statusBanner");
         if (statusBanner) {
-            statusBanner.textContent = `Race to find letters A, C, M! You have 2 minutes (02:00)!`;
+            const mins = Math.floor(this.timeLimitSeconds / 60);
+            const secs = this.timeLimitSeconds % 60;
+            const timeFormatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+            const minuteWord = mins === 1 && secs === 0 ? "1 minute" : `${mins} minutes`;
+            statusBanner.textContent = `Race to find letters A, C, M! You have ${minuteWord} (${timeFormatted})!`;
         }
 
         if (this.timerCountdownInterval) clearInterval(this.timerCountdownInterval);
