@@ -242,6 +242,15 @@ Theme accents and branding can be customized in [`style.css`](style.css):
 
 ---
 
+
+## 👥 Team
+
+- **Atharv Sherkar** -
+- **Pranit Khndade** -
+- **Vaibhav Patil Dhumal* -
+
+---
+
 ## 📄 License
 
 This project is licensed under the [MIT License](LICENSE)—free for educational, chapter, and commercial hackathon use.
