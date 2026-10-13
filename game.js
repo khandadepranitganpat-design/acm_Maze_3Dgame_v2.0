@@ -90,7 +90,7 @@ class Game {
             });
         }
 
-        this.startTimer();
+        // Only start timer when game actually launches (resetGame)
         this.updateHUD();
 
         // Start render loop
@@ -151,11 +151,16 @@ class Game {
         this.timerInterval = setInterval(() => {
             if (!this.isGameOver) {
                 this.elapsedSeconds = Math.floor((Date.now() - this.startTime) / 1000);
-                const timerEl = document.getElementById('timerVal');
-                if (timerEl) {
-                    const mins = String(Math.floor(this.elapsedSeconds / 60)).padStart(2, '0');
-                    const secs = String(this.elapsedSeconds % 60).padStart(2, '0');
-                    timerEl.textContent = `${mins}:${secs}`;
+                // When playerApp is managing the countdown, let playerApp handle #timerVal exclusively.
+                // In standalone fallback, strictly display the 2:00 -> 0:00 countdown timer!
+                if (!window.playerApp || !window.playerApp.gameStarted) {
+                    const timerEl = document.getElementById('timerVal');
+                    if (timerEl) {
+                        const remaining = Math.max(0, 120 - this.elapsedSeconds);
+                        const mins = String(Math.floor(remaining / 60)).padStart(2, '0');
+                        const secs = String(remaining % 60).padStart(2, '0');
+                        timerEl.textContent = `${mins}:${secs}`;
+                    }
                 }
             }
         }, 1000);

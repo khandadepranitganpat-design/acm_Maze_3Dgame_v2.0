@@ -219,7 +219,7 @@ class PlayerController {
         const timerVal = document.getElementById("timerVal");
         const statusBanner = document.getElementById("statusBanner");
         if (statusBanner) {
-            statusBanner.textContent = `Race to find letters A, C, M! You have ${this.timeLimitSeconds}s!`;
+            statusBanner.textContent = `Race to find letters A, C, M! You have 2 minutes (02:00)!`;
         }
 
         if (this.timerCountdownInterval) clearInterval(this.timerCountdownInterval);
@@ -258,10 +258,11 @@ class PlayerController {
     updateTimerDisplay() {
         const timerVal = document.getElementById("timerVal");
         if (timerVal) {
-            const mins = String(Math.floor(this.remainingSeconds / 60)).padStart(2, '0');
-            const secs = String(this.remainingSeconds % 60).padStart(2, '0');
+            const clamped = Math.max(0, this.remainingSeconds);
+            const mins = String(Math.floor(clamped / 60)).padStart(2, '0');
+            const secs = String(clamped % 60).padStart(2, '0');
             timerVal.textContent = `${mins}:${secs}`;
-            if (this.remainingSeconds <= 15) {
+            if (clamped <= 15) {
                 timerVal.style.color = '#ef4444';
             } else {
                 timerVal.style.color = '#38bdf8';
