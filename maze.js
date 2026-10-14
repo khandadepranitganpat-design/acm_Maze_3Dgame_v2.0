@@ -4,15 +4,37 @@
  * Calibrated for optimal mobile visibility and smooth player navigation.
  */
 
+function createPRNG(seed) {
+    let s = typeof seed === 'number' ? seed : 0;
+    if (typeof seed === 'string') {
+        for (let i = 0; i < seed.length; i++) {
+            s = (s ^ seed.charCodeAt(i)) + ((s << 5) - s) | 0;
+        }
+    }
+    s = (s >>> 0) || 1337;
+    return function() {
+        s |= 0; s = (s + 0x6D2B79F5) | 0;
+        let t = Math.imul(s ^ (s >>> 15), 1 | s);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
 class Maze {
-    constructor(cols = 16, rows = 16) {
+    constructor(cols = 16, rows = 16, seed = null) {
         this.cols = Math.max(10, cols);
         this.rows = Math.max(10, rows);
+        this.seed = seed !== null && seed !== undefined ? seed : Math.floor(Math.random() * 2147483647);
+        this.rng = createPRNG(this.seed);
         this.cells = [];     // 2D array of cell objects: { x, y, top, right, bottom, left, visited }
         this.letters = [];   // [ { id: 'A', x, y, collected: false, revealed: false } ]
         this.traveled = [];  // Boolean 2D array for visited cells
         this.startPos = { x: 0, y: 0 };
         this.init();
+    }
+
+    random() {
+        return this.rng();
     }
 
     init() {
@@ -72,7 +94,7 @@ class Maze {
             }
 
             if (unvisitedNeighbors.length > 0) {
-                const { cell: nextCell, dir } = unvisitedNeighbors[Math.floor(Math.random() * unvisitedNeighbors.length)];
+                const { cell: nextCell, dir } = unvisitedNeighbors[Math.floor(this.random() * unvisitedNeighbors.length)];
 
                 // Knock down walls between current and neighbor
                 current[dir.wall] = false;
@@ -97,7 +119,7 @@ class Maze {
                 if (cell.bottom) wallCount++;
                 if (cell.left) wallCount++;
 
-                if (wallCount >= 3 && Math.random() < braidRatio) {
+                if (wallCount >= 3 && this.random() < braidRatio) {
                     const candidates = [];
                     if (cell.top && r > 0) candidates.push({ dir: 'top', opp: 'bottom', nx: c, ny: r - 1 });
                     if (cell.right && c < this.cols - 1) candidates.push({ dir: 'right', opp: 'left', nx: c + 1, ny: r });
@@ -105,7 +127,7 @@ class Maze {
                     if (cell.left && c > 0) candidates.push({ dir: 'left', opp: 'right', nx: c - 1, ny: r });
 
                     if (candidates.length > 0) {
-                        const pick = candidates[Math.floor(Math.random() * candidates.length)];
+                        const pick = candidates[Math.floor(this.random() * candidates.length)];
                         cell[pick.dir] = false;
                         this.cells[pick.ny][pick.nx][pick.opp] = false;
                     }
@@ -125,8 +147,13 @@ class Maze {
             }
         }
 
-        // Shuffle candidate cells
-        candidateCells.sort(() => Math.random() - 0.5);
+        // Deterministic Fisher-Yates shuffle with seeded RNG
+        for (let i = candidateCells.length - 1; i > 0; i--) {
+            const j = Math.floor(this.random() * (i + 1));
+            const tmp = candidateCells[i];
+            candidateCells[i] = candidateCells[j];
+            candidateCells[j] = tmp;
+        }
 
         const targetChars = ['A', 'C', 'M'];
         this.letters = [];
@@ -285,6 +312,7 @@ class Maze {
         return {
             cols: this.cols,
             rows: this.rows,
+            seed: this.seed,
             cells: this.cells,
             letters: this.letters,
             startPos: this.startPos,
@@ -296,9 +324,17 @@ class Maze {
         if (!saved) return;
         if (saved.cols) this.cols = saved.cols;
         if (saved.rows) this.rows = saved.rows;
+        if (saved.seed !== undefined) {
+            this.seed = saved.seed;
+            this.rng = createPRNG(this.seed);
+        }
         if (saved.cells) this.cells = saved.cells;
         if (saved.letters) this.letters = saved.letters;
         if (saved.startPos) this.startPos = saved.startPos;
         if (saved.traveled) this.traveled = saved.traveled;
     }
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = Maze;
 }

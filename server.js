@@ -31,10 +31,11 @@ function getLocalIp() {
 }
 
 const server = http.createServer(async (req, res) => {
-    // Enable CORS
+    // Enable CORS with ETag and delta support
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, If-None-Match');
+    res.setHeader('Access-Control-Expose-Headers', 'ETag');
 
     if (req.method === 'OPTIONS') {
         res.writeHead(200);

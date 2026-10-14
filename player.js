@@ -332,7 +332,8 @@ class PlayerController {
                 rehydrated = window.gameInstance.rehydrate(this.savedActiveGame);
             }
             if (!rehydrated) {
-                window.gameInstance.resetGame();
+                const seed = (this.sync && this.sync.cachedState && this.sync.cachedState.mazeSeed) || null;
+                window.gameInstance.resetGame(seed);
             }
             window.gameInstance.onSpellComplete = (stats) => {
                 this.onPlayerCompletedSpell(stats);

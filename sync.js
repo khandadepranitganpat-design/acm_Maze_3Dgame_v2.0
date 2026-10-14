@@ -72,13 +72,43 @@ class GameSync {
         if (this.isPolling) return;
         this.isPolling = true;
 
+        let pollTimer = null;
+        let backoffOnError = 1000;
+
         const pollRoom = async () => {
+            if (!this.isPolling) return;
             try {
-                const res = await fetch(`/api/room?roomId=${this.roomId}`, {
+                const versionParam = this.cachedState && this.cachedState.version ? `&since=${this.cachedState.version}` : '';
+                const headers = {};
+                if (this.lastEtag) {
+                    headers['If-None-Match'] = this.lastEtag;
+                }
+
+                const res = await fetch(`/api/room?roomId=${this.roomId}${versionParam}`, {
+                    headers,
                     cache: "no-store"
                 });
+
+                if (res.status === 304) {
+                    // State unchanged on server (saved 99% bandwidth)
+                    backoffOnError = 1000;
+                    scheduleNext();
+                    return;
+                }
+
+                const etag = res.headers ? res.headers.get('ETag') : null;
+                if (etag) this.lastEtag = etag;
+
                 if (res.ok) {
                     const data = await res.json();
+                    backoffOnError = 1000;
+
+                    if (data && data.unchanged) {
+                        // Delta response indicates no change
+                        scheduleNext();
+                        return;
+                    }
+
                     if (data && data.room) {
                         this.cachedState = Object.assign(this.cachedState, data.room);
                         if (this.cachedState.status === "COUNTDOWN" && this.cachedState.countdownStart) {
@@ -91,12 +121,38 @@ class GameSync {
                         }
                         this.notifyListeners();
                     }
+                } else {
+                    backoffOnError = Math.min(backoffOnError * 1.5, 4000);
                 }
-            } catch (e) {}
+            } catch (e) {
+                backoffOnError = Math.min(backoffOnError * 1.5, 4000);
+            }
+            scheduleNext();
+        };
+
+        const scheduleNext = () => {
+            if (!this.isPolling) return;
+            // Adaptive polling rates based on game lifecycle & tab visibility
+            let baseInterval = 1000;
+            if (typeof document !== 'undefined' && document.hidden) {
+                baseInterval = 3000; // Sleep in background
+            } else if (this.cachedState.status === "COUNTDOWN") {
+                baseInterval = 600;  // Responsive start countdown
+            } else if (this.cachedState.status === "LOBBY") {
+                baseInterval = 1200; // Responsive lobby check
+            } else if (this.cachedState.status === "STARTED") {
+                baseInterval = 1000; // Responsive race & timer sync
+            } else if (this.cachedState.status === "ENDED") {
+                baseInterval = 2500; // Low frequency once ended
+            }
+
+            // Jitter to eliminate 300-player thundering herd synchronization
+            const jitter = (Math.random() - 0.5) * 300;
+            const delay = Math.max(350, Math.floor(baseInterval + jitter));
+            pollTimer = setTimeout(pollRoom, delay);
         };
 
         pollRoom();
-        setInterval(pollRoom, 400); // Poll every 400ms for tight sync
     }
 
     async vercelAction(action, payload = {}) {
@@ -527,4 +583,8 @@ class GameSync {
         };
         this.saveLocalState();
     }
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = GameSync;
 }

@@ -17,13 +17,14 @@ const PLAYER_COLLISION_RADIUS = 0.22;  // Compact collision capsule smaller than
 const PLAYER_SPEED = 5.2;
 
 class Game {
-    constructor() {
+    constructor(seed = null) {
         this.canvas = document.getElementById('gameCanvas');
         this.sound = new SoundManager();
 
         // Maze settings (16x16 labyrinth)
         this.mazeSize = 16;
-        this.maze = new Maze(this.mazeSize, this.mazeSize);
+        this.seed = seed;
+        this.maze = new Maze(this.mazeSize, this.mazeSize, this.seed);
 
         // Game stats
         this.steps = 0;
@@ -1265,8 +1266,11 @@ class Game {
         }
     }
 
-    resetGame() {
-        this.maze = new Maze(this.mazeSize, this.mazeSize);
+    resetGame(seed = null) {
+        if (seed !== null && seed !== undefined) {
+            this.seed = seed;
+        }
+        this.maze = new Maze(this.mazeSize, this.mazeSize, this.seed);
 
         const startWorldX = (this.maze.startPos.x + 0.5) * CELL_SIZE;
         const startWorldZ = (this.maze.startPos.y + 0.5) * CELL_SIZE;

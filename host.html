@@ -696,29 +696,49 @@
             document.getElementById("hostPodiumPhase").style.display = phaseId === "hostPodiumPhase" ? "flex" : "none";
         }
 
+        let lastRenderedPlayerCount = -1;
+        let lastRenderedPlayerHash = "";
+
         function renderLobbyPlayers(players) {
             const container = document.getElementById("hostPlayerTags");
             if (!container) return;
 
             if (players.length === 0) {
-                container.innerHTML = `
-                    <div style="color: var(--text-muted); font-style: italic; margin: auto; text-align: center; padding: 20px;">
-                        Waiting for players to scan QR code and enter their names...
-                    </div>
-                `;
+                if (lastRenderedPlayerCount !== 0) {
+                    lastRenderedPlayerCount = 0;
+                    lastRenderedPlayerHash = "";
+                    container.innerHTML = `
+                        <div style="color: var(--text-muted); font-style: italic; margin: auto; text-align: center; padding: 20px;">
+                            Waiting for players to scan QR code and enter their names...
+                        </div>
+                    `;
+                }
                 return;
             }
 
+            // Quick change detection: skip DOM destruction if player count & tail identity match
+            const tailId = players[players.length - 1]?.id || players[players.length - 1]?.name || "";
+            const currentHash = `${players.length}_${tailId}`;
+            if (currentHash === lastRenderedPlayerHash && players.length === lastRenderedPlayerCount) {
+                return; // State unchanged, retain DOM nodes
+            }
+            lastRenderedPlayerHash = currentHash;
+            lastRenderedPlayerCount = players.length;
+
             const colors = ["#ffb703", "#00f5d4", "#ff006e", "#38bdf8", "#a855f7", "#10b981", "#f97316"];
-            container.innerHTML = "";
+            const fragment = document.createDocumentFragment();
+
             players.forEach((p, idx) => {
                 const tag = document.createElement("div");
                 tag.className = "kahoot-player-tag";
                 const col = colors[idx % colors.length];
                 tag.style.borderColor = col;
                 tag.innerHTML = `<span style="color: ${col};">👤</span> ${escapeHtml(p.name)}`;
-                container.appendChild(tag);
+                fragment.appendChild(tag);
             });
+
+            container.innerHTML = "";
+            container.appendChild(fragment);
         }
 
         function updateHostTimerPreview() {
@@ -801,16 +821,24 @@
                 }, 1000);
             }
 
-            const listEl = document.getElementById("liveFinishersList");
-            if (finishers.length === 0) {
+        let lastFinishersHash = "";
+
+        const listEl = document.getElementById("liveFinishersList");
+        if (finishers.length === 0) {
+            if (lastFinishersHash !== "0") {
+                lastFinishersHash = "0";
                 listEl.innerHTML = `
                     <div style="color: var(--text-muted); font-style: italic;">
                         Players exploring maze... when letters A, C, M are found, times appear here!
                     </div>
                 `;
-            } else {
+            }
+        } else {
+            const currentHash = `${finishers.length}_${finishers.map(f => (f.id || f.name) + (f.finishTimeSeconds || 0)).join(',')}`;
+            if (currentHash !== lastFinishersHash) {
+                lastFinishersHash = currentHash;
                 finishers.sort((a, b) => (a.finishTimeSeconds || 9999) - (b.finishTimeSeconds || 9999));
-                listEl.innerHTML = "";
+                const fragment = document.createDocumentFragment();
                 finishers.forEach((f, idx) => {
                     const row = document.createElement("div");
                     row.className = "rank-item";
@@ -819,9 +847,12 @@
                         <span>#${idx + 1} <strong>${escapeHtml(f.name)}</strong></span>
                         <span style="font-family: monospace; color: #00f5d4;">⏱️ ${f.finishTimeFormatted}</span>
                     `;
-                    listEl.appendChild(row);
+                    fragment.appendChild(row);
                 });
+                listEl.innerHTML = "";
+                listEl.appendChild(fragment);
             }
+        }
         }
 
         function hostEndGame() {
